@@ -1,0 +1,39 @@
+{
+  "status": "complete",
+  "protocol": "original_image_mainline_promotion_v1",
+  "generated_multiview": false,
+  "aggregation": "single_phase_hard_center_GMP_rho_0.1",
+  "mlp": [
+    1280,
+    512,
+    256
+  ],
+  "validation_ids_per_cell": 1449,
+  "cells": 6,
+  "real_sam3_probe": {
+    "image": "2007_000033",
+    "regions": 4,
+    "maximum_absolute_error": 0.0,
+    "peak_allocated_bytes": 3858249728
+  },
+  "results": {
+    "clean": {
+      "42": 0.8550376044603231,
+      "123": 0.8564289827324358,
+      "2026": 0.8563366602544759
+    },
+    "HCR": {
+      "42": 0.8627229329769592,
+      "123": 0.8644032270471317,
+      "2026": 0.8658216628667466
+    }
+  },
+  "HCR_mean": 0.8643159409636126,
+  "all_full_and_per_image_confusion_matrices_identical_to_history": true,
+  "unit_tests_passed": 46,
+  "evaluation_features": "historical pre-MLP query vectors; native projection, retrieval, proposal handling and HCR",
+  "development_result_only": true,
+  "server_artifact_version": "mainline_gmp2_hcr_20261008",
+  "native_raw_bank_members": 37200,
+  "native_training_bank_loader_verified": true
+}

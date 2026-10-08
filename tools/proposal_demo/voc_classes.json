@@ -1,0 +1,22 @@
+[
+  {"name": "aeroplane", "prompt": "airplane", "hypernyms": ["aircraft", "vehicle"]},
+  {"name": "bicycle", "prompt": "bicycle", "hypernyms": ["wheeled vehicle"]},
+  {"name": "bird", "prompt": "bird", "hypernyms": ["animal"]},
+  {"name": "boat", "prompt": "boat", "hypernyms": ["watercraft", "vehicle"]},
+  {"name": "bottle", "prompt": "bottle", "hypernyms": ["container"]},
+  {"name": "bus", "prompt": "bus", "hypernyms": ["motor vehicle"]},
+  {"name": "car", "prompt": "car", "hypernyms": ["motor vehicle"]},
+  {"name": "cat", "prompt": "cat", "hypernyms": ["feline", "animal"]},
+  {"name": "chair", "prompt": "chair", "hypernyms": ["seat", "furniture"]},
+  {"name": "cow", "prompt": "cow", "hypernyms": ["cattle", "animal"]},
+  {"name": "diningtable", "prompt": "dining table", "hypernyms": ["table", "furniture"]},
+  {"name": "dog", "prompt": "dog", "hypernyms": ["canine", "animal"]},
+  {"name": "horse", "prompt": "horse", "hypernyms": ["equine", "animal"]},
+  {"name": "motorbike", "prompt": "motorcycle", "hypernyms": ["motor vehicle"]},
+  {"name": "person", "prompt": "person", "hypernyms": ["human being"]},
+  {"name": "pottedplant", "prompt": "potted plant", "hypernyms": ["plant"]},
+  {"name": "sheep", "prompt": "sheep", "hypernyms": ["ruminant", "animal"]},
+  {"name": "sofa", "prompt": "sofa", "hypernyms": ["seat", "furniture"]},
+  {"name": "train", "prompt": "train", "hypernyms": ["rail vehicle"]},
+  {"name": "tvmonitor", "prompt": "television monitor", "hypernyms": ["display", "electronic device"]}
+]

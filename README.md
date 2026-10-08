@@ -12,4 +12,3 @@
 安装：复用可用的 CUDA PyTorch/torchvision 环境，再执行 `pip install -r requirements.txt`。SAM3源码及许可证保留在 `sam3-main/`。数据、权重、特征库、提议缓存和历史产物均不提交GitHub。通知密码只从 `MODUSEG_SMTP_PASSWORD` 环境变量读取，参见 `.env.example`。
 
 所有新库、权重与结果使用新版本目录。严格检查算法、参数、精度及权重签名，不覆盖历史数据。
-

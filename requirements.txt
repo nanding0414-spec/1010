@@ -1,0 +1,21 @@
+# ---- 基础依赖 ----
+numpy
+opencv-python-headless
+Pillow
+tqdm
+huggingface_hub
+setuptools
+iopath
+einops
+torchmetrics
+matplotlib
+scikit-learn
+scipy
+threadpoolctl
+
+# ---- 检索后端 ----
+# CPU FAISS does not need a CUDA-specific wheel. Existing faiss-gpu also works.
+faiss-cpu
+
+# Reuse a working torch/torchvision CUDA environment, then install this local SAM3 source.
+-e ./sam3-main
