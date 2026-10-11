@@ -104,7 +104,7 @@ def fake_sam3():
         return model
 
     modules['sam3.model_builder'].build_sam3_image_model = build
-    with patch.dict(sys.modules, modules):
+    with patch.dict(sys.modules, modules), patch('src.sam3_precision.use_standard_vit_mlp', return_value=1):
         yield models
 
 

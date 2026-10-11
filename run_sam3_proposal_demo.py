@@ -126,6 +126,14 @@ def build_proposer(args, device):
         enable_inst_interactivity=not query,
     ).to(device).eval()
     model.requires_grad_(False)
+    if args.precision == 'fp32':
+        from src.sam3_precision import use_standard_vit_mlp
+        if not use_standard_vit_mlp(model):
+            raise RuntimeError('No supported SAM3 ViT MLP found for FP32 proposals')
+        model.float()
+        import torch
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
     common = dict(model=model, device=device, min_mask_area=args.min_mask_area,
                   min_mask_region_area=args.min_mask_region_area,
                   max_mask_area_ratio=args.max_mask_area_ratio, max_masks=args.max_masks)

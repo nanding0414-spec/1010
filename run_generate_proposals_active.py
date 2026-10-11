@@ -71,8 +71,13 @@ def is_complete(folder, path):
     if not receipt.is_file() or not cache.is_file():
         return False
     try:
-        if json.loads(receipt.read_text(encoding='utf-8'))['source'] != file_identity(path):
+        record = json.loads(receipt.read_text(encoding='utf-8'))
+        if record['source'] != file_identity(path):
             return False
+        if os.environ.get('MODUSEG_STRICT_CACHE') == '1':
+            import hashlib
+            if record.get('cache_sha256') != hashlib.sha256(cache.read_bytes()).hexdigest():
+                return False
         with Image.open(path) as img:
             width, height = img.size
         with np.load(cache, allow_pickle=False) as data:
@@ -88,6 +93,10 @@ def main(argv=None):
     args = parse_args(argv, bulk=True)
     images = select_images(args)
     prepare_output(args)
+    if os.environ.get('MODUSEG_STRICT_CACHE') == '1':
+        for path in images:
+            if (args.output_dir / f'{path.stem}.npz').exists() and not is_complete(args.output_dir, path):
+                raise ValueError(f'Unverified/changed cache retained: {path.stem}; use a new version')
     pending = [path for path in images if not is_complete(args.output_dir, path)]
     print(f'Selected: {len(images)} | complete: {len(images) - len(pending)} | pending: {len(pending)}', flush=True)
     print(f'Output: {args.output_dir.resolve()}', flush=True)
@@ -120,6 +129,10 @@ def main(argv=None):
     torch.manual_seed(args.seed)
     proposer = build_proposer(args, device)
     for number, path in enumerate(pending, 1):
+        import shutil
+        reserve = int(os.environ.get('MODUSEG_MIN_FREE_BYTES', '0'))
+        if shutil.disk_usage(args.output_dir).free < reserve:
+            raise OSError('Proposal cache disk free space is below the configured reserve')
         # Per-image seed keeps resumed runs consistent with uninterrupted runs.
         random.seed(args.seed)
         np.random.seed(args.seed)
@@ -148,6 +161,9 @@ def main(argv=None):
             np.savez_compressed(stream, masks=masks, scores=scores.astype(np.float32))
         temporary.replace(cache)
         report = dict(source=source_identity, count=len(scores), seconds=time.perf_counter() - start)
+        if os.environ.get('MODUSEG_STRICT_CACHE') == '1':
+            import hashlib
+            report['cache_sha256'] = hashlib.sha256(cache.read_bytes()).hexdigest()
         if args.backend == 'active':
             report['active'] = proposer.last_result['report']
         atomic_json(receipt, report)

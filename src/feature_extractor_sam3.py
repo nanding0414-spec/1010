@@ -287,8 +287,11 @@ class SAM3FeatureExtractor(BaseFeatureExtractor):
 
     def _aggregate_many(self, image_rgb, masks):
         from src.hard_center_gmp import aggregate
-        inp, _ = self._preprocess_image(image_rgb)
-        tokens, grid = self._forward_tokens(inp)
+        if getattr(self, 'image_token_cache', None) is not None:
+            tokens, grid = self.image_token_cache.tokens(self, image_rgb)
+        else:
+            inp, _ = self._preprocess_image(image_rgb)
+            tokens, grid = self._forward_tokens(inp)
         if tokens is None or tokens.shape[0] != 1:
             raise RuntimeError('Expected one-image spatial tokens')
         results = []
@@ -303,6 +306,14 @@ class SAM3FeatureExtractor(BaseFeatureExtractor):
         if self.pooling == 'smfa':
             return super().extract_features(image_rgb, mask_bool)
         return self._aggregate_many(image_rgb, [mask_bool])[0]
+
+    def set_image_source(self, path, rgb):
+        if getattr(self, 'image_token_cache', None) is not None:
+            self.image_token_cache.bind(path, rgb)
+
+    def cache_image_features(self, rgb):
+        if getattr(self, 'image_token_cache', None) is not None:
+            return self.image_token_cache.tokens(self, rgb)
 
     def extract_features_batch(self, image_rgb, masks_bool_list):
         if self.pooling == 'smfa':

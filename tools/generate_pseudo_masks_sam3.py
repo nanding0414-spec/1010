@@ -55,12 +55,27 @@ class SAM3PseudoMaskGenerator:
         preflight_split=None,
         image_dir=None,
         output_size_reference_dir=None,
+        edge_repair=False, mask_logit_threshold=0.4, close_kernel=3,
+        close_iterations=1, dilate_pixels=1, diningtable_close_iterations=2,
+        force_presence_one=False,
     ):
         self.dataset_type = dataset_type.lower()
         self.prompt_backend = prompt_backend
         if prompt_backend != 'active':
             raise ValueError('Only the active prompt backend is supported')
         self.active_options = dict(active_options or {})
+        self.edge_repair = bool(edge_repair)
+        self.edge_options = dict(mask_logit_threshold=mask_logit_threshold, close_kernel=close_kernel,
+            close_iterations=close_iterations, dilate_pixels=dilate_pixels,
+            diningtable_close_iterations=diningtable_close_iterations)
+        if self.edge_repair:
+            from src.mask_edge_repair import sam3_logits_to_repaired_mask
+            sam3_logits_to_repaired_mask(np.zeros((1,1)), mask_logit_threshold,
+                                        close_kernel, close_iterations, dilate_pixels)
+            self.active_options['mask_probability_threshold'] = mask_logit_threshold
+        self.force_presence_one = bool(force_presence_one)
+        if self.force_presence_one:
+            self.active_options['force_presence_one'] = True
         self.active_proposer = None
         self.active_classes = None
         self.image_metadata = {}
@@ -247,10 +262,25 @@ class SAM3PseudoMaskGenerator:
             class_ids = self.active_proposer.last_result['class_ids']
             # Keep the existing pseudo-label overlap rule: first allowed class wins.
             # No competing-class score comparison and no background calibration.
+            edge_statistics = []
             for cls_idx, pseudo_value in mapped_labels:
                 union = masks[class_ids == cls_idx + 1].any(axis=0)
+                before_pixels = int(union.sum())
+                if getattr(self, 'edge_repair', False):
+                    from src.mask_edge_repair import edge_postprocess_mask
+                    options = self.edge_options
+                    iterations = (options['diningtable_close_iterations']
+                                  if self.classes[cls_idx] in ('table', 'diningtable', 'dining table')
+                                  else options['close_iterations'])
+                    union = edge_postprocess_mask(union, options['close_kernel'], iterations,
+                                                 options['dilate_pixels']).astype(bool)
+                    edge_statistics.append(dict(class_id=pseudo_value,name=self.classes[cls_idx],
+                        close_iterations=iterations,before_pixels=before_pixels,after_pixels=int(union.sum()),
+                        composite_pixels=int((union & (seg==0)).sum())))
                 seg[union & (seg == 0)] = pseudo_value
             self.last_prompt_report = self.active_proposer.last_result['report']
+            if getattr(self,'edge_repair',False):
+                self.last_prompt_report['edge_repair'] = dict(self.edge_options,classes=edge_statistics)
             return seg
 
         raise RuntimeError('Active proposer is required')
@@ -337,6 +367,11 @@ class SAM3PseudoMaskGenerator:
                                  prompts=list(self.classes))
         if not self.use_bf16:
             generation_config['vit_mlp_precision_policy'] = 'standard_non_bf16_v1'
+        if getattr(self, 'edge_repair', False):
+            generation_config['edge_repair'] = dict(self.edge_options, channel_policy='per_class_union_before_composite',
+                                                  input='upsampled_pred_masks_logits_sigmoid')
+        if getattr(self, 'force_presence_one', False):
+            generation_config['force_presence_one'] = True
         if getattr(self, 'image_dir', None) is not None:
             generation_config['image_dir'] = str(self.image_dir.resolve())
         if getattr(self, 'output_size_reference_dir', None) is not None:
@@ -348,8 +383,18 @@ class SAM3PseudoMaskGenerator:
         fingerprint = hashlib.sha256(json.dumps(generation_config, sort_keys=True).encode('utf-8')).hexdigest()
         completed_path = meta_dir / f'completed_{split}.json'
         completed = json.loads(completed_path.read_text(encoding='utf-8')) if completed_path.is_file() else {}
+        hashes_path = meta_dir / f'artifact_hashes_{split}.json'
+        hashes = json.loads(hashes_path.read_text(encoding='utf-8')) if hashes_path.is_file() else {}
+        strict_cache = os.environ.get('MODUSEG_STRICT_CACHE') == '1'
+        checkpoint_interval = int(os.environ.get('MODUSEG_PSEUDO_CHECKPOINT_INTERVAL', '25'))
+        if checkpoint_interval < 1:
+            raise ValueError('Pseudo checkpoint interval must be positive')
 
         def save_completed():
+            if strict_cache:
+                hash_tmp = hashes_path.with_suffix('.tmp.json')
+                hash_tmp.write_text(json.dumps(hashes, indent=2), encoding='utf-8')
+                hash_tmp.replace(hashes_path)
             temporary = completed_path.with_suffix('.tmp.json')
             temporary.write_text(json.dumps(completed, indent=2), encoding='utf-8')
             temporary.replace(completed_path)
@@ -373,6 +418,14 @@ class SAM3PseudoMaskGenerator:
         for sample in tqdm([] if eval_only else samples, desc="Generating pseudo masks"):
             img_path, out_path = sample['image'], sample['prediction']
             try:
+                import shutil
+                reserve = int(os.environ.get('MODUSEG_MIN_FREE_BYTES', '0'))
+                if shutil.disk_usage(self.output_dir).free < reserve:
+                    raise RuntimeError('Pseudo-label disk free space is below the configured reserve')
+                if strict_cache and out_path.is_file():
+                    key = str(img_path.resolve())
+                    if completed.get(key) != fingerprint or hashes.get(key) != hashlib.sha256(out_path.read_bytes()).hexdigest():
+                        raise RuntimeError(f'Unverified/changed PNG retained: {out_path}; use a new version')
                 if resume and out_path.is_file() and completed.get(str(img_path.resolve())) == fingerprint:
                     success += 1
                     skipped += 1
@@ -394,7 +447,9 @@ class SAM3PseudoMaskGenerator:
                                            encoding="utf-8")
                 success += 1
                 completed[str(img_path.resolve())] = fingerprint
-                if success % 25 == 0:
+                if strict_cache:
+                    hashes[str(img_path.resolve())] = hashlib.sha256(out_path.read_bytes()).hexdigest()
+                if success % checkpoint_interval == 0:
                     save_completed()
             except Exception as e:  # noqa: BLE001
                 print(f"\nFailed: {img_path.name}, error: {e}")
@@ -461,6 +516,15 @@ def parse_args(argv=None):
     parser.add_argument('--min-mask-region-area', type=int, default=0)
     parser.add_argument('--nms-threshold', type=float, default=0.7)
     parser.add_argument('--max-mask-area-ratio', type=float, default=0.0)
+    parser.add_argument('--edge-repair', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--mask-logit-threshold', type=float, default=.4,
+                        help='Probability threshold after sigmoid, not a raw-logit cutoff')
+    parser.add_argument('--close-kernel', type=int, default=3)
+    parser.add_argument('--close-iterations', type=int, default=1)
+    parser.add_argument('--dilate-pixels', type=int, default=1)
+    parser.add_argument('--diningtable-close-iterations', type=int, default=2)
+    parser.add_argument('--force-presence-one', action=argparse.BooleanOptionalAction,
+                        help='Keep all supplied known image-level classes; presence probability=1')
     parser.add_argument('--evaluate', action=argparse.BooleanOptionalAction, default=True,
                         help='Compute mIoU against GT after generation (default on)')
     parser.add_argument('--eval-only', action='store_true', help='Evaluate existing masks without loading SAM3')
@@ -473,6 +537,14 @@ def parse_args(argv=None):
     from configs.experiment import PSEUDO
     parser.set_defaults(**PSEUDO)
     args = parser.parse_args(argv)
+    from src.mask_edge_repair import sam3_logits_to_repaired_mask
+    try:
+        sam3_logits_to_repaired_mask(np.zeros((1,1)), args.mask_logit_threshold, args.close_kernel,
+                                    args.close_iterations, args.dilate_pixels)
+        if args.diningtable_close_iterations < 0:
+            raise ValueError('diningtable close iterations must be nonnegative')
+    except ValueError as error:
+        parser.error(str(error))
     if args.eval_only and not args.evaluate:
         parser.error('--eval-only cannot be combined with --no-evaluate')
     import math
@@ -530,6 +602,9 @@ def main(argv=None):
         prompt_backend=args.prompt_backend, active_options=active_options if args.prompt_backend == 'active' else {},
         classes_file=args.classes_file, dataset_root=args.dataset_root, device=args.device,
         load_model=not args.eval_only,
+        edge_repair=args.edge_repair, mask_logit_threshold=args.mask_logit_threshold,
+        close_kernel=args.close_kernel, close_iterations=args.close_iterations, dilate_pixels=args.dilate_pixels,
+        diningtable_close_iterations=args.diningtable_close_iterations, force_presence_one=args.force_presence_one,
         imagelevel_json=args.imagelevel_json, preflight_split=args.split,
         image_dir=args.image_dir, output_size_reference_dir=args.output_size_reference_dir,
     )

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict original-image GMP/MLP2/HCR inference (no multiview inputs)."""
+"""Strict inference for the selected presence1/edge/geometry GMP2/HCR mainline."""
 import argparse
 import json
 import os
@@ -13,17 +13,25 @@ sys.path.insert(0, str(ROOT))
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--bank', required=True, type=Path)
-    p.add_argument('--adapter', required=True, type=Path)
-    p.add_argument('--checkpoint', type=Path, default=ROOT/'weights/sam3/sam3.pt')
-    p.add_argument('--dataset-root', type=Path, required=True)
-    p.add_argument('--clean-proposals-dir', type=Path, required=True)
-    p.add_argument('--raw-proposals-dir', type=Path, required=True)
+    p.add_argument('--mainline-manifest',type=Path,default=ROOT/'experiments/mainline_active.json',
+                   help='Optional local activation record; experiment/model artifacts stay outside GitHub')
+    p.add_argument('--bank', type=Path)
+    p.add_argument('--adapter', type=Path)
+    p.add_argument('--checkpoint', type=Path)
+    p.add_argument('--dataset-root', type=Path)
+    p.add_argument('--clean-proposals-dir', type=Path)
+    p.add_argument('--raw-proposals-dir', type=Path)
     p.add_argument('--output-dir', type=Path, required=True)
     p.add_argument('--gpu', type=int, default=1)
-    p.add_argument('--seed', type=int, choices=[42,123,2026], default=42)
+    p.add_argument('--seed', type=int, choices=[42,123,2026])
+    p.add_argument('--preflight-only',action='store_true',help='Validate selected artifacts and GPU; do not run evaluation')
     p.add_argument('--no-hcr', action='store_true', help='Clean-baseline ablation only')
     a = p.parse_args()
+    from project_utils.mainline_selection import resolve_mainline_inputs
+    try:
+        selected=resolve_mainline_inputs(a,ROOT)
+    except (ValueError,KeyError,OSError) as exc:
+        p.error(str(exc))
     if a.output_dir.exists():
         p.error('Use a new output directory; historical results are never overwritten')
     for item in (a.bank/'meta/feature_signature.json', a.adapter, a.checkpoint,
@@ -31,6 +39,11 @@ def main():
         if not item.is_file():
             p.error(f'Missing required input: {item}')
     signature = json.loads((a.bank/'meta/feature_signature.json').read_text())
+    from tools.run_mainline_full import sha
+    if signature.get('adapter',{}).get('sha256')!=sha(a.adapter):
+        p.error('Bank and MLP checkpoint hashes differ')
+    if signature.get('checkpoint_sha256')!=sha(a.checkpoint):
+        p.error('Bank and SAM3 checkpoint hashes differ')
     from src.hard_center_gmp import describe
     arch = signature.get('adapter', {}).get('architecture', {})
     if (signature.get('aggregation') != describe(.1) or arch.get('num_layers', 2) != 2
@@ -45,7 +58,10 @@ def main():
             p.error(f'Physical GPU {a.gpu} is absent or occupied: {occupancy.get(a.gpu)}')
     except (OSError, subprocess.CalledProcessError) as exc:
         p.error(f'Cannot inspect GPU occupancy: {exc}')
-    env = os.environ.copy()
+    if a.preflight_only:
+        print(f'[Mainline] validated {selected["source_version"] if selected else a.bank}; physical GPU {a.gpu}')
+        return
+    env = {k:v for k,v in os.environ.items() if not k.startswith('OVERRIDE_')}
     env.update(CUDA_VISIBLE_DEVICES=str(a.gpu), PYTHONDONTWRITEBYTECODE='1',
         OVERRIDE_DATASET_TYPE='voc', OVERRIDE_SEED=str(a.seed), OVERRIDE_SAM3_POOLING='hard_center_gmp',
         OVERRIDE_SAM3_GMP_RHO='0.1', OVERRIDE_SAM3_USE_BF16='false',

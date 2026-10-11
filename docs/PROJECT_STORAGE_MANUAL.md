@@ -1,11 +1,19 @@
-# ModuSeg SAM3 · 原图 GMP＋MLP2＋HCR 单库主线交接手册
+# ModuSeg SAM3 · presence=1＋边缘修复＋几何清理＋GMP2＋HCR 主线手册
 
-更新：2026-10-08。本文是本项目唯一维护手册，适用于精简版代码包；供应商 SAM3 的许可证、接口说明仍以 `sam3-main/` 为准。
+更新：2026-10-11。本文是本项目唯一维护手册；当前正式操作以第46节为准，供应商SAM3的许可证、接口说明仍以 `sam3-main/` 为准。
+
+### 2026-10-10 当前独立从头实验项目
+
+用户本次指定并已通过SSH确认的根目录为 `/data/home/zystu2025/nd/1010-main`，
+环境Python为 `/data/home/zystu2025/.conda/envs/moduseg_sam3/bin/python`。
+本次使用项目内 `data/VOC2012` 和 `weights/sam3/sam3.pt`，当前双卡完整入口与主线激活见第46节。
+下述旧项目迁移、旧缓存约定及1–42节历史命令保留；本次明确从头生成新标签、提议和库，
+不使用旧缓存约定或历史模型作为输入。
 
 
-> 当前主线已按用户要求切换为不使用多视角的最高纪录路线：原图 Active → 冻结 SAM3 → 单相位硬中心 GMP（ρ=0.1）→ 两层 MLP → 单库检索 → 已清洗提议 → HCR。主线操作以第42节为准。下文1–41节保留历史操作与实验记录，其中SMFA/三层MLP不再代表当前默认；历史实验产物不改写。无多视角历史三seed均值86.4316%，最高单seed86.5822%。
+> 当前主线按用户要求采用第45节已验证的presence=1＋边缘修复＋逐类别几何清理：原图Active标签 → 冻结SAM3 → 单相位硬中心GMP（ρ=0.1）→ 两层MLP → 单库检索 → clean/raw提议与HCR。当前正式操作以第46节为准。VOC val单seed42为86.7350%，属于开发验证分数；此前三seed均值86.4316%属于旧配方。1–45节保留历史操作和实验记录，旧代码/标签/库/权重/指标不改写。
 
-### 当前服务器项目路径（2026-10-07 用户确认迁移）
+### 历史服务器项目路径（2026-10-07 用户确认迁移）
 
 - 当前项目根目录：`/data/home/zystu2025/nd/nd/ModuSeg_SAM3`。其中连续的 `nd/nd` 为用户明确指定，后续服务器命令以此路径为准。
 - 旧项目根目录：`/home/zystu2025/nd/ModuSeg_SAM3`。下文旧命令及历史实验中的绝对路径属于迁移前记录，不代表当前位置；不批量改写历史 manifest、指标或完成标记。
@@ -13,7 +21,7 @@
 - 外部 VOC 数据目录和 Conda 环境是否迁移尚未确认，不据项目迁移推断其新路径。
 - 已清洗提议的项目内相对路径仍为 `storage/proposals/voc/active_clean_20260928_151808`，按新项目根目录定位，运行前检查实体完整性。
 
-### 当前服务器提议缓存约定（2026-09-28 用户指定）
+### 历史服务器提议缓存约定（2026-09-28 用户指定）
 
 后续新实验默认只读使用已清洗缓存 `/home/zystu2025/nd/ModuSeg_SAM3/storage/proposals/voc/active_clean_20260928_151808`，不重新生成提议、不重复清洗。使用 `OVERRIDE_INF_LOAD_PROPOSALS=true` 和上述 `OVERRIDE_INF_PROPOSALS_DIR`，调用 `run_inference.py` 时不传 `--cleanup-config`。分类后的实例筛选和 NMS 仍正常执行，它们不是缓存清洗。
 
@@ -81,17 +89,18 @@ logs/                             后台启动日志和 PID
 | Active 标签 | tools/generate_pseudo_masks_sam3.py、tools/proposal_demo/ | 图片+允许类别 → PNG+生成元数据；生成失败不能计作成功 |
 | 双卡标签 | tools/run_pseudo_two_gpus.py | JSON 交错分片，独立 metadata，全部完成后全量评测 |
 | 区域提取 | src/region_extractors.py | 类别掩码 → 前景连通域，背景整图一域；仅面积过滤，无腐蚀 |
-| 特征提取 | src/feature_extractor_sam3.py、src/feature_extractor.py | SAM3 token → SMFA 区域向量；原图区域映射到实际 token 网格 |
+| 特征提取 | src/feature_extractor_sam3.py、src/feature_extractor.py | 默认硬中心GMP，SMFA仅显式兼容；原图区域映射到token网格 |
 | 高分辨率 | src/sam3_resolution.py、tools/probe_sam3_resolution.py | RoPE 适配与全局注意力 query 分块；只适配特征路径 |
 | 原始库 | run_build_feature_bank.py、src/build_feature_bank.py、src/filter_stage.py | 区域向量 → 分类别 NPZ、索引、类别映射、特征签名 |
-| MLP | tools/train_feature_adapter.py、src/feature_adapter.py、src/adapter_training.py | 原库 → checkpoint、训练报告、投影后的库；支持 2/3 层，默认 3 |
+| MLP | tools/train_feature_adapter.py、src/feature_adapter.py、src/adapter_training.py | 原库 → checkpoint、训练报告、投影单库；默认2层 |
 | 提议 | run_generate_proposals.py、run_generate_proposals_active.py | grid/query/Active 提议 → 可复用缓存；Active 缓存供单库推理读取 |
 | 清理 | tools/refine_proposals.py、src/proposal_cleanup.py | 保留原始 score，删除低分/小区域、去孤岛、填小洞、去重 |
 | HCR候选救援 | src/semantic_rescue.py | 原clean＋原始候选 → 高检索证据筛选 → 只补背景；run_inference.py --rescue开启 |
 | 分类与评测 | run_inference.py、src/inference.py、src/retrieval.py | 区域检索 → 语义结果、逐类 IoU、mIoU、混淆矩阵 |
 | 可视化 | tools/visualize_feature_bank.py、tools/visualize_proposals.py | 特征分布、类间分离、提议可视化；不等于验证精度 |
 | 参数扫描 | tools/sweep_proposal_cleanup.py | 固定库/权重/原始提议，内存清理并比较检索设置 |
-| 完整双卡 | tools/run_span2016_full.py | ×4 标签 → 2016 双卡建库 → GPU1 新训 MLP → 双卡验证 |
+| 完整双卡 | tools/run_mainline_full.py | presence1/edge标签 → 几何清理 → 原图GMP → GPU1新训MLP2 → 双卡HCR |
+| 标签几何清理 | tools/clean_pseudo_labels.py、src/pseudo_label_cleanup.py | 原始语义PNG → 独立清理后PNG及逐图SHA；保护其它类别 |
 | 公共实验函数 | project_utils/experiment.py | 原子 JSON、哈希、阶段重试、迁移定位、MLP 命令；无旧消融依赖 |
 
 `tools/run_pipeline.py` 是可选 tmux “建库+推理”启动器，不负责标签生成或 MLP 训练；不要将它与完整双卡入口混淆。`debug_*` 用于局部排查，不能代替严格全量评测。
@@ -104,7 +113,7 @@ logs/                             后台启动日志和 PID
 
 - `PSEUDO` 是 Active 生成 CLI 的默认值；默认 VOC trainaug、FP32 标签生成，CLI 可覆盖普通选项。请求 BF16 可将 `no_bf16` 改为 False；老卡保持 True。
 - `TRAINING` 是独立 MLP CLI 与完整双卡入口共同使用的配方；值 None 表示按 v1/v2 决定。v1 默认 linear 分类、KNN 选模；v2 默认 cosine 分类与特征正则。内部验证按训练图片划分，不使用最终 VOC val 调训练参数。
-- `CLEANUP` 是清理默认值。完整双卡入口自动写入 experiments 下的 cleanup.json；普通推理需显式传 `--cleanup-config`，不传则不启用该内存清理。
+- `CLEANUP` 是验证提议清理默认值；`PSEUDO_CLEANUP`是相同几何参数用于训练语义标签的子集。正式完整入口分别保存原标签和清理后标签、raw和clean提议。`MAINLINE`默认启用语义几何清理和整图FP32缓存。
 
 主要默认值及含义：
 
@@ -113,7 +122,7 @@ logs/                             后台启动日志和 PID
 | 特征 | 1008、trunk_fpn、level=-1、layernorm | 默认特征编码尺寸与特征源；改变后库和 MLP 必须匹配 |
 | 区域 | 面积 300、拆连通域 | 输入坐标中的像素面积；没有腐蚀参数 |
 | 库过滤 | 前景 0.10、背景 0 | 类内异常特征过滤比例 |
-| MLP | 3 层、隐藏 512、输出 256 | Linear→GELU→Linear→GELU→Linear，输出归一化 |
+| MLP | 2层、隐藏512、输出256 | Linear→GELU→Linear，输出归一化 |
 | 训练 | 50 轮×100 步、8 类×4 区域 | 类平衡采样，学习率 0.001，对比温度 0.1、权重 0.5 |
 | 划分 | seed=42、内部验证 0.2 | 可用 --split-file 指定已有训练报告来复用图片划分 |
 | 清理 | 0.7 / 100 / 64 / 32 / 0.01 / 0.85 | 依次为分数、最小掩码、孤岛、孔洞、孔洞比例、清理 NMS |
@@ -142,7 +151,7 @@ SAM3 导入路径必须指向本次代码包的 `sam3-main/sam3`，避免仍加�
 
 VOC 需要 JPEGImages、ImageSets/Segmentation/{trainaug,val}.txt、对应图像级 JSON 与 GT。完整双卡预检要求 SegmentationClassAug 覆盖 trainaug 和 val。不自动拷贝或改写数据；已有存储可以明确指定绝对路径或创建链接。
 
-## 6. 单卡标准主线示例
+## 6. 历史单卡示例（当前正式主线见第46节）
 
 以下在项目根目录执行，物理 GPU1。`clean_v1` 必须是未使用过的新版本。已有提议示例路径需要按实际服务器实体检查。
 
@@ -1545,3 +1554,269 @@ PYTHONPATH=sam3-main python -B -m unittest \
 通知功能仍保留：除环境变量外，可读取用户主目录下`.config/moduseg/notify.json`私有配置（password/sender/recipient），服务器文件权限设600，不进入项目或GitHub。显式设置空的MODUSEG_SMTP_PASSWORD可关闭通知。
 
 2026-10-08部署验收完成：真实查询图2007_000033的4个区域向量与历史缓存误差为0；六个1449张clean/HCR回归的整体及逐图混淆矩阵完全一致。部署后46项测试通过；37,200成员原库与三套MLP库/权重均另存为`mainline_gmp2_hcr_20261008`正式签名。详细摘要见同目录`mainline_validation.json`。
+
+## 43. 原图 Active/GMP/MLP2/HCR 双卡从头完整实验（2026-10-10）
+
+入口 `tools/run_mainline_full.py`，专用测试 `tests/test_mainline_full.py`。
+固定原图VOC trainaug=10,582、val=1,449，两张物理GPU0/1，每卡最多一个worker。
+无历史输入：重新生成训练Active标签、验证Active原始提议，独立清理一次；
+重新提取单相位硬中心GMP rho=.1、1008、trunk_fpn、FP32特征，再全库统一过滤前景10%、背景0%。
+训练seed42普通两层1280→512→256 MLP，v1、50×100步、8类×4区域；内部图片划分重新生成。
+最终两卡分片在线提取GMP并完成HCR评测，混淆矩阵相加后计算IoU，不能平均两卡mIoU。
+
+新增FP32提议生成修正在第一次图像前向之前替换供应商ViT MLP内部强制BF16路径。
+验证提议使用完整20类VOC词表（Active仍按存在分数选择活跃类别），不读取验证图像级类别。
+所有面积保持原图像素坐标，参数来自当前PSEUDO/TRAINING/CLEANUP，在线提议沿用Active导出默认配方并显式FP32。
+
+执行前先查看真实CLI及运行测试：
+
+```bash
+cd /data/home/zystu2025/nd/1010-main
+conda activate moduseg_sam3
+PYTHONPATH=sam3-main python -B -m unittest tests.test_mainline_full tests.test_experiment_notify tests.test_mainline_gmp tests.test_feature_signature tests.test_retrieval tests.test_proposal_cleanup tests.test_semantic_rescue tests.test_sam3_precision tests.test_bulk_active_proposals tests.test_pseudo_two_gpus tools.proposal_demo.test_active
+python -B tools/run_mainline_full.py --help
+python -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --preflight-only
+python -u -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --probe-only
+```
+
+只读预检全量解码并SHA256绑定图片、GT、清单、训练图像级JSON、本地权重和代码；
+检查GPU占用（显存不超过1000MiB、利用率不超过10%）及保守存储估计，并保留5GiB。
+`--probe-only`创建新版本及代码快照，两卡分别完成真实训练标签、验证提议、GMP前向，
+用真实GMP向量配合明确标记的合成诊断类别运行短MLP训练/导出和一图严格HCR推理。
+探针的synthetic类别和指标只检查接口，不进入正式库、不报告为实验精度。
+成功状态ready，探针不发送完成邮件。随后同版本`--resume`复用已核验探针，开始全量生成：
+
+```bash
+mkdir -p logs
+# YOUR_NEW_VERSION 与上面的探针版本一致；日志/PID均使用新名字。
+nohup python -u -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --gpus 0 1 --seed 42 --resume > logs/YOUR_NEW_VERSION_launcher.log 2>&1 < /dev/null &
+# 记录启动器PID，避免覆盖历史PID文件。
+```
+
+不用单独探针时直接运行新版本（不带--resume），入口也先完成全部真实探针，失败不进入全量阶段。
+无整体时间截止。每阶段开始重新核验输入SHA，失败阶段保留attempt；后续相同代码/参数/输入可--resume。
+标签和提议沿用本次分片缓存；GMP特征逐图原子NPZ及绑定签名/输入哈希的receipt，只复用校验通过的检查点。
+不完整/被修改的GMP检查点拒绝重用，不静默覆盖。清理、合库、训练、评测失败使用新attempt。
+完成阶段凭据绑定产物SHA256，不通过时拒绝续跑。代码/参数改变必须新版本。
+
+storage/pseudo_labels/voc/<版本>保存训练PNG及分片meta；storage/proposals/voc/<版本>/raw与clean/attempt_NNN保存原始及清理NPZ。
+storage/raw_banks/voc/<版本>/image_cache保存逐图向量，bank/attempt_NNN保存合并过滤库；
+weights/sam3_adapter/<版本>/42/attempt_NNN和storage/mlp_banks/voc/<版本>/42/attempt_NNN为正式权重及导出库。
+probe/attempt_NNN/gpuN属于独立诊断产物。experiments/<版本>/code保存不可变代码快照，worker从快照运行，
+storage/runtime/<版本>保存/data上的临时目录和模型缓存。logs/<版本>/<阶段>/<attempt>/worker_N.log保存worker日志。
+
+experiments/<版本>保存manifest、artifacts、progress、status、summary、metrics、per_class.csv及各阶段attempt；
+worker报告含物理GPU、耗时及本进程峰值显存。最终summary区分训练标签质量与1,449张HCR语义mIoU。
+只有全量标签、raw/clean提议、50轮训练、全量严格评测全部成功才complete，不承诺复现历史86.4316%。
+
+通知仅由父启动器在最终状态落盘后发送，正文含mIoU、21类IoU、数量和最佳轮次；
+附件只含summary.json、metrics.json及per_class.csv，失败附已存在的实际结果，不打包数据模型。
+邮箱配置可通过MODUSEG_NOTIFY_CONFIG指向主目录私有JSON，或沿用MODUSEG_SMTP_*环境变量。
+凭据不进入实验manifest、代码快照或命令记录。SMTP最多尝试3次，失败独立记录notification.json；
+SMTP accepted不代表确认收件箱投递。SIGTERM只停止本启动器拥有的worker进程组，禁止pkill python；
+断电/SIGKILL无法保证邮件，遗留锁须确认原启动器及worker均退出后人工处理。
+
+2026-10-10服务器实施与启动记录：新增完整入口及缓存严格校验，65项相关测试全部通过。
+两卡真实Active/GMP/短MLP导出/严格HCR探针均complete，每卡探针峰值分配5230.60MiB，
+探针缓存属diagnostic_only，不作为真实精度。新实验版本`mainline_full_20261010_172757`，
+正式后台启动器PID198857，GPU0/1伪标签worker为198879/198880，均从不可变代码快照运行。
+已核验运行状态running/pseudo，首批训练PNG及逐图哈希完成记录正在增加。
+启动日志`logs/mainline_full_20261010_172757_launcher.log`，PID文件同名前缀`_launcher.pid`。
+最终结果位于`experiments/mainline_full_20261010_172757`；当前没有完整实验指标。
+结果邮件配置已通过SMTP认证，最终评测及结果落盘后由父启动器发送摘要及三个结果附件。
+标签/提议worker启用每图磁盘保留检查、逐图完成凭据和PNG/NPZ SHA校验；
+被修改的缓存拒绝重用，不自动覆盖原缓存。新手册变更不影响正在运行的代码快照。
+
+## 44. 已知类别 presence=1＋逐类别边缘修复＋整图特征缓存（2026-10-10）
+
+本轮用户明确指定的新实验，不覆盖第43节版本或其产物。完整入口新增可选参数
+`--edge-repair --force-presence-one --save-image-features`，默认不启用，旧入口行为保持。
+概率阈值参数名`--mask-logit-threshold`，语义始终为sigmoid后的概率阈值，默认0.4，可显式0.25。
+SAM3 Active直接读取forward_grounding的原始pred_masks logits，上采样到原图后sigmoid、按阈值二值化，
+沿用实例分数/面积/NMS筛选，再对同类别实例取并集，每类别分别进行close与轻微dilate，最后合成伪标签。
+close为先膨胀再腐蚀，普通类kernel3/iterations1/dilate1；VOC的table对应diningtable，默认iterations2。
+每类别mask是uint8的0/1，最终VOC语义PNG仍0..20，重叠仍由图像级允许类别的原顺序先到先占。
+纯NumPy模块src/mask_edge_repair.py的dilate外部padding=False、erode外部padding=True，遵照用户代码。
+
+presence=1仅用于已知训练图像级类别：关闭Active预览筛类，全部允许前景类均解码，
+实例分数=object sigmoid×1，保留原实例conf_thr；不是把原始presence logit设为1（后者概率只有约0.731）。
+强制存在模式要求明确class_indices，不能对无已知类别的全词表提议启用。
+验证提议依旧使用完整VOC词表、正常预测presence/Active预览，不读取验证图像级类别或GT指导筛选。
+新选项/类别阈值/修复配置写入伪标签配置、指纹和manifest，不能续接旧版标签。
+
+整图缓存位于storage/image_features/voc/<新版本>/{train,val}/<image_id>.npz及对应JSON。
+保存的是本项目GMP实际使用的trunk_fpn整图空间特征：72×72×1280、FP32，融合/归一化后、GMP和MLP之前。
+NPZ不压缩以保持快速写入，原始浮点值无损；包含tokens和grid，JSON绑定原图SHA、实际RGB SHA、
+尺寸、基础权重及编码配置、文件SHA。每图约25.3MiB，12,031图约297GiB；启动估算额外计入缓存与余量。
+不保存全部Transformer层中间状态。缓存签名独立于掩码/GMP rho/MLP，便于今后显式复用相同编码空间。
+生成训练GMP向量和验证在线编码时保存缓存；同图共享内存tokens，恢复时可核验并直接读取。
+即便某图无有效区域或候选也保存其整图特征。坏文件、改图、配置不匹配或不完整NPZ/JSON对拒绝使用，保留原文件。
+逐图区域向量、原始库、MLP库仍按第43节目录保存，完成阶段绑定整图缓存SHA并严格核对全量ID。
+
+例：先执行新增及原有测试，再用新版本做两卡真实探针；探针包括落盘读回后的GMP向量一致性检查。
+
+```bash
+PYTHONPATH=sam3-main python -B -m unittest tests.test_edge_feature_cache tests.test_mainline_full tests.test_mainline_gmp tests.test_feature_signature tests.test_pseudo_mask_evaluation tools.proposal_demo.test_active
+python -u -B tools/run_mainline_full.py --version YOUR_NEW_EDGE_VERSION --edge-repair --force-presence-one --save-image-features --probe-only
+# 探针ready后，同参数、同版本追加--resume进行全量后台运行；启动日志使用新名字。
+```
+
+仍固定seed42、原图GMP rho=.1、MLP2 v1 50×100、单库和HCR；伪标签、原始提议、清理、原库、MLP及评测均新建。
+结束通知沿用用户指定QQ邮箱配置，附summary/metrics/per_class.csv；图像特征不进入邮件，不自动打包。
+
+第44节服务器启动记录：72项相关测试全通过，两卡真实探针ready，均对餐桌图片2007_000250
+确认允许类别bottle/table存在概率1，餐桌close_iterations2；餐桌通道49402→51917像素，
+以上只是通道覆盖诊断，不是精度提升。每卡保存5份真实整图NPZ，形状72×72×1280、FP32，
+落盘读回GMP向量一致性检查通过；短训练/导出/严格HCR流程通过。
+全新版本mainline_edge_presence1_features_20261010_224233，后台启动器PID200757，
+双卡伪标签worker 200779/200780，状态running/pseudo。估算新增433.2GiB，预检/data空闲约3334GiB。
+运行日志logs/mainline_edge_presence1_features_20261010_224233_launcher.log；
+结果experiments/mainline_edge_presence1_features_20261010_224233；整图缓存storage/image_features/voc/同版本/train和val。
+上一轮mainline_full_20261010_172757已complete：1449张HCR mIoU86.5016%，最佳MLP轮次44，
+SMTP首次接受结果通知及三个附件。旧输入、产物和代码快照不改写；新版本最终指标尚未获得。
+
+## 45. 第二轮语义伪标签几何清理与缓存复用消融（2026-10-11）
+
+入口 `tools/run_pseudo_cleanup_ablation.py`，测试 `tests/test_pseudo_cleanup_ablation.py`。
+第44节实验已complete：伪标签mIoU86.2840%，完整HCR mIoU86.2694%，MLP最佳13轮，实际训练满50轮。
+用户要求在第二轮伪标签之后加入在线提议清理，复用可用产物，再做完整建库/训练/评测。
+第二轮只保存合成语义PNG及提示记录，没有逐实例mask/score；本入口明确是几何清理消融。
+复用 `src.proposal_cleanup.clean_mask`：每前景类别单独删除小于64像素的8连通小岛，
+填不超过32像素且不超过该类别面积1%的封闭孔洞，再执行该类别100像素面积门槛。
+孔洞只可填输入背景，不覆盖其它原始前景类别；语义标签仍0..20。背景由清理后前景的补集给出。
+不虚构实例分数，不声称执行0.7分数过滤或逐实例NMS；已有语义通道互斥，也不做跨类NMS。
+清理不腐蚀边缘，不保证能纠正上一轮已过度膨胀的轮廓。GT仅用于生成后的质量统计和最终评测。
+
+复用源必须是complete的第44节实验，原标签、原始及clean验证提议、整图FP32 token缓存、
+过滤前逐图GMP向量全部只读。新标签放storage/pseudo_labels/voc/<新版本>；
+新逐图区域检查点和一次全库前景10%过滤后的库放storage/raw_banks/voc/<新版本>；
+新MLP权重放weights/sam3_adapter/<新版本>/42；新投影库放storage/mlp_banks/voc/<新版本>/42。
+不复制约297GiB整图缓存，不重新运行SAM3编码器或生成验证提议。owned_roots和referenced_roots明确分开。
+训练图像的类别和GMP选中token索引完全相同时，原始区域向量可逐区域复用；
+改变token支持的区域用已保存整图特征重新做相同FP32 GMP及二次L2归一化。
+重新合并所有未过滤区域后只过滤一次，不直接拼接旧过滤库，不复用旧MLP权重。
+验证重算GMP并应用本次新MLP，读取上一轮raw/clean提议，保持检索和HCR参数。
+
+预检核验源完成凭据、全部图片/GT/清单/权重SHA、PNG/逐图GMP/验证提议SHA、
+全量token文件ID/大小和JSON凭据SHA/编码签名；大token NPZ实际SHA在使用前核验。
+`CachedGMPExtractor`严格只读；缺失或损坏缓存立即失败，不回退生成或修改历史。
+固定第二轮内部训练/验证图片成员，用--split-file训练seed42、MLP2 v1、50×100步；
+训练后再核对两组图片成员完全一致，1449张严格HCR混淆矩阵相加后统计mIoU。
+每图新检查点绑定源SHA、清理配置和代码摘要；阶段完整性凭据、不可变代码快照、
+新attempt恢复及5GiB空间底线沿用完整主线。无整体时间到期，不覆盖历史输出。
+
+```bash
+PYTHONPATH=sam3-main python -B -m unittest tests.test_pseudo_cleanup_ablation tests.test_edge_feature_cache tests.test_mainline_full tests.test_proposal_cleanup
+python -B tools/run_pseudo_cleanup_ablation.py --version YOUR_NEW_VERSION --preflight-only
+python -u -B tools/run_pseudo_cleanup_ablation.py --version YOUR_NEW_VERSION --probe-only
+# 双卡探针通过后，同版本固定代码/配置/输入，再后台--resume：
+nohup python -u -B tools/run_pseudo_cleanup_ablation.py --version YOUR_NEW_VERSION --resume > logs/YOUR_NEW_VERSION_launcher.log 2>&1 < /dev/null &
+```
+
+探针对实际清理标签的向量复用与重新计算做1e-6一致性核对，两卡分别完成短MLP导出和严格HCR联通；
+探针标签/区域/库仍分别位于storage下，诊断权重位于weights，各根目录使用probe/attempt_NNN/gpuN；
+探针参数、指标和日志位于experiments和logs，不混入正式库。
+短训练的合成诊断类别不进入正式库、不报告为实验精度。结果附清理像素统计、向量复用数量、
+伪标签质量、库统计、最佳轮次、完整1449张总体/逐类IoU及对第44节源实验的差值。
+结束或失败后沿用用户指定QQ通知配置，附件summary.json、metrics.json、per_class.csv，不打包特征或模型。
+
+第45节启动验收：78项相关测试通过，目录调整后新增8项再次通过。用户确认采用几何清理及缓存复用。
+新版本`mainline_edge_cleanreuse_20261011_114857`，启动器PID203763，后台脱离SSH。
+全量源输入/区域/提议SHA及12,031份token凭据预检通过；两卡短流程均complete，
+每卡4图14个区域中11个向量复用、3个重新计算，复用与直接计算的最大误差为0。
+诊断HCR子进程峰值分配82.16MiB，指标仅为接口验证。
+验收时状态running/pseudo_cleanup，CPU分片worker 204071/204072均存活，日志推进；
+已有5,959份正式标签完成凭据，抽检20张PNG的哈希、尺寸、类值和代码绑定均通过。
+后续建库/评测使用物理GPU0/1，50轮MLP训练使用GPU1。正式结果尚未获得。
+启动日志`logs/mainline_edge_cleanreuse_20261011_114857_launcher.log`；
+结果目录`experiments/mainline_edge_cleanreuse_20261011_114857`，含deployment_validation.json。
+早期`mainline_edge_cleanreuse_20261011_114355`只完成短流程诊断，状态ready，未进入全量实验；
+诊断历史保留，正式版本按storage/weights分类存储探针产物，两个版本不混用。
+
+第45节完成验收（北京时间2026-10-11 12:45:28）：正式版本complete，50轮训练与全部1,449张
+严格HCR评测通过；再次核对两卡图像ID互斥且完整、混淆矩阵之和等于总矩阵、指标/训练报告SHA。
+清理后伪标签mIoU86.2884%，较第二轮86.2840%增加0.0045个百分点。
+最终HCR mIoU86.7350%，比第二轮86.2694%增加0.4656点，比第一轮86.5016%增加0.2334点。
+内部5-NN原始宏准确率仍92.8271%，新MLP最佳宏准确率98.3774%、最佳38轮，末轮loss0.601585。
+内部训练/验证图片成员和raw/clean验证提议SHA均与第二轮一致。公交、火车、鸟IoU分别
+增加3.5642/3.6544/1.7807点；公交→火车混淆从157,082像素降为0；汽车下降1.4864点。
+清理改变5,285张图、350,017像素，删除226,198小岛像素，填123,648背景孔洞像素，
+保护7,281其它前景像素，33个类别通道未达到100像素门槛。过滤后前景仍24,311个区域。
+原始GMP向量复用32,699个，重算4,872个；整图缓存未复制，SAM3编码器未重跑。
+主流程耗时3,269.64秒（约54分30秒，不含初始化预检）；QQ SMTP首次接受结束通知及
+summary.json/metrics.json/per_class.csv三个附件，不声称确认收件箱投递。
+这是固定seed42的单次清理对照结果，未自动替换默认主线或追加多seed实验。
+
+## 46. 当前正式主线与GitHub同步（2026-10-11）
+
+用户明确将第45节完成版本作为正式主线。仓库为 `https://github.com/nanding0414-spec/1010`。
+当前模型版本 `mainline_edge_cleanreuse_20261011_114857`，VOC val单seed42 mIoU86.7350%，
+训练50×100步、内部最佳38轮、完整1,449图严格HCR；这是开发验证成绩，不是独立测试或三seed均值。
+历史原始标签、提议、库、模型、指标及代码快照不改写。
+
+正式配方：训练图片的已知类别presence概率固定1，全部允许类别解码；SAM3原图logits上采样并sigmoid，
+概率阈值0.4，普通类3×3 close1/dilate1，餐桌close2/dilate1。同类实例合并、原类别顺序合成语义PNG后，
+再逐类别做几何清理：去小于64像素的8连通小岛，填≤32像素且≤类别面积1%的封闭孔洞，类别面积门槛100。
+填洞仅写原背景、不覆盖其他类别，不伪造语义PNG不存在的实例分数，不对互斥语义通道做跨类NMS。
+验证提议保持全词表、正常预测presence及原清理配方0.7/100/64/32/0.01/0.85，不使用验证真值类别。
+冻结SAM3，原图1008/trunk_fpn/FP32，单相位硬中心GMP rho=.1，原库前景最远10%过滤一次、背景保留。
+MLP2 1280→512→256、v1/seed42、50×100步，按训练图片内部验证5-NN宏准确率选模。
+单库balanced检索K25/每类top5/中心权重0.4，加原HCR参数，仅补背景。
+
+`configs/experiment.py`的PSEUDO默认启用presence1和边缘修复；PSEUDO_CLEANUP明确几何参数。
+`tools/run_mainline_full.py`默认启用独立语义清理阶段和训练/验证整图FP32缓存。
+新主线标签目录为storage/pseudo_labels/voc/<版本>/raw与clean/attempt_NNN；原始PNG始终保留。
+`--no-edge-repair --no-force-presence-one --no-semantic-cleanup --no-save-image-features`用于显式基线消融。
+新默认不能续接旧实验；旧实验恢复只使用当时的不可变代码快照。
+
+### 双卡从头完整运行
+
+```bash
+cd /data/home/zystu2025/nd/1010-main
+conda activate moduseg_sam3
+PYTHONPATH=sam3-main python -B -m unittest tests.test_mainline_promotion tests.test_pseudo_cleanup_ablation tests.test_edge_feature_cache tests.test_mainline_full tests.test_mainline_gmp tests.test_feature_signature tests.test_retrieval tests.test_proposal_cleanup tests.test_semantic_rescue
+python -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --preflight-only
+python -u -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --probe-only
+# ready后，同代码/输入/参数恢复，日志使用新名字；此命令必须手动给新版本。
+nohup python -u -B tools/run_mainline_full.py --version YOUR_NEW_VERSION --gpus 0 1 --resume > logs/YOUR_NEW_VERSION_launcher.log 2>&1 < /dev/null &
+```
+
+新完整入口分开生成raw标签、清理标签、评价清理后标签；建库仅用clean。
+大token缓存约297GiB，预检仍估算额外空间并保留5GiB；保存逐图SHA、原始区域向量、原库及投影库。
+运行流程/失败新attempt/阶段校验/邮件通知仍按第43–45节约定。
+若只对现有raw语义标签清理，独立入口为：
+
+```bash
+python -B tools/clean_pseudo_labels.py --input-dir storage/pseudo_labels/voc/YOUR_RAW_VERSION --output-dir storage/pseudo_labels/voc/YOUR_NEW_CLEAN_VERSION --image-list data/VOC2012/ImageSets/Segmentation/trainaug.txt
+```
+
+### 激活已验证模型并推理
+
+`tools/activate_mainline.py`只接受完成50轮、10582训练图与1449验证图、配方相符的seed42版本。
+核验已登记库/MLP/基础权重/验证提议SHA及匹配签名，不复制或重训模型。
+版本化激活记录放experiments/mainline_selections/<模型版本>.json，当前选择写experiments/mainline_active.json。
+这些是服务器运行产物，不提交GitHub；正式推理入口只在缺少显式资源路径时读取激活记录。
+
+```bash
+python -B tools/activate_mainline.py --version mainline_edge_cleanreuse_20261011_114857
+python -B tools/run_mainline.py --output-dir experiments/YOUR_NEW_EVAL_VERSION --gpu 1 --preflight-only
+python -u -B tools/run_mainline.py --output-dir experiments/YOUR_NEW_EVAL_VERSION --gpu 1
+```
+
+新安装没有激活记录时，显式提供资源：
+
+```bash
+python -u -B tools/run_mainline.py --bank storage/mlp_banks/voc/YOUR_VERSION/42/attempt_001 --adapter weights/sam3_adapter/YOUR_VERSION/42/attempt_001/adapter.pt --checkpoint weights/sam3/sam3.pt --dataset-root data/VOC2012 --clean-proposals-dir storage/proposals/voc/YOUR_PROPOSALS_VERSION/clean/attempt_001 --raw-proposals-dir storage/proposals/voc/YOUR_PROPOSALS_VERSION/raw --output-dir experiments/YOUR_NEW_EVAL_VERSION --gpu 1
+```
+
+服务器当前被选模型使用第45节的新库/新MLP及第44节的raw/clean验证提议；可复用整图缓存的实验
+仍可显式使用tools/run_pseudo_cleanup_ablation.py，但它是复用对照入口，不取代从头完整入口。
+GitHub更新只含代码、测试、配置、必要SAM3词表/源码/许可证及文档；.gitignore继续排除data/storage/
+weights/experiments/logs和通知凭据，不自动打包。默认分支更新采用已有提交的后继提交，保留全部历史。
+
+第46节发布验收：86项相关测试全部通过。新默认双卡真实探针
+`mainline_releasecheck_20261011_132203`达到ready，完整验证raw标签→几何清理→真实GMP→短MLP导出→严格HCR；
+两卡生成的餐桌图片2007_000250清理后PNG均与第45节实际标签逐像素完全一致。
+第45节正式库和MLP已通过2,930个已登记输入/控制文件的SHA及签名核验，
+激活为experiments/mainline_active.json的当前选择；版本化激活记录保留在mainline_selections下。
+原库、原权重、原实验指标和快照未复制或改写。发布清单覆盖388个代码/文档/词表/许可证文件。

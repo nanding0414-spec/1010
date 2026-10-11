@@ -8,7 +8,7 @@ import smtplib
 import ssl
 
 
-def notify_experiment(version, status, result_dir, seconds=None):
+def notify_experiment(version, status, result_dir, seconds=None, *, summary=None, attachments=()):
     """Call once from the launcher after persisting final status, never from workers.
 
     Returns delivery-to-SMTP status, not confirmation of inbox delivery.
@@ -34,9 +34,23 @@ def notify_experiment(version, status, result_dir, seconds=None):
         message['To'] = recipient
         message['Subject'] = f'[ModuSeg] {version}: {status}'
         elapsed = '未提供' if seconds is None else f'{float(seconds)/3600:.2f} 小时'
+        details = ''
+        if summary:
+            if summary.get('mIoU') is not None:
+                details += f"最终 HCR mIoU：{100 * summary['mIoU']:.4f}%\n"
+            for key in ('evaluated_count', 'best_epoch', 'failed_stage', 'error'):
+                if key in summary:
+                    details += f'{key}：{summary[key]}\n'
+            for name, value in summary.get('per_class_iou', {}).items():
+                details += f'{name} IoU：{100 * value:.4f}%\n'
         message.set_content(f'实验版本：{version}\n最终状态：{status}\n耗时：{elapsed}\n'
+                            + details +
                             f'结果目录：{result_dir}\n请查看该目录的 status.json 和 summary.json。\n'
                             '本邮件不附带模型、数据、日志或环境变量。\n')
+        for path in attachments:
+            path = Path(path)
+            message.add_attachment(path.read_bytes(), maintype='application',
+                                   subtype='octet-stream', filename=path.name)
         with smtplib.SMTP_SSL('smtp.qq.com', 465, timeout=15,
                               context=ssl.create_default_context()) as smtp:
             smtp.login(sender, password)

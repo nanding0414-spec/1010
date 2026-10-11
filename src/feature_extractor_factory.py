@@ -39,6 +39,11 @@ def build_feature_extractor(
         pooling=SAM3_POOLING,
         gmp_rho=SAM3_GMP_RHO,
     )
+    import os
+    cache_dir = os.environ.get('OVERRIDE_IMAGE_TOKEN_CACHE_DIR', '')
+    if cache_dir:
+        from src.image_token_cache import ImageTokenCache
+        extractor.image_token_cache = ImageTokenCache(cache_dir, extractor.feature_signature())
     if FEATURE_ADAPTER_CKPT:
         from src.feature_adapter import AdaptedFeatureExtractor
         return AdaptedFeatureExtractor(extractor, FEATURE_ADAPTER_CKPT)

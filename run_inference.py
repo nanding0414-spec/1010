@@ -237,6 +237,11 @@ def main(argv=None):
                 raise ValueError(f'Expected exact x{args.feature_image_scale} feature image for {img_id}')
 
         gt = None
+        base_extractor = getattr(dino, 'base', dino)
+        if getattr(base_extractor, 'image_token_cache', None) is not None:
+            feature_input = feature_rgb if feature_rgb is not None else img_rgb
+            base_extractor.set_image_source(feature_images[img_id] if feature_images is not None else img_path, feature_input)
+            base_extractor.cache_image_features(feature_input)
         if gt_path and os.path.isfile(gt_path):
             gt = np.array(Image.open(gt_path))
             if args.strict_eval and gt.shape != (h, w):

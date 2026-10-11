@@ -78,7 +78,8 @@ class SAM3ActiveProposer:
                  neighbor_tokens=2, hypernym_tokens=2, context_strength=1.0,
                  confidence_threshold=0.15,
                  mask_nms_threshold=0.7, min_mask_area=100,
-                 min_mask_region_area=0, max_mask_area_ratio=0.95, max_masks=0):
+                 min_mask_region_area=0, max_mask_area_ratio=0.95, max_masks=0,
+                 mask_probability_threshold=0.5, force_presence_one=False):
         from sam3.model.sam3_image_processor import Sam3Processor
 
         self.model, self.device, self.classes = model, device, classes
@@ -92,6 +93,10 @@ class SAM3ActiveProposer:
         self.mask_nms_threshold = mask_nms_threshold
         self.min_mask_area, self.min_mask_region_area = min_mask_area, min_mask_region_area
         self.max_mask_area_ratio, self.max_masks = max_mask_area_ratio, max_masks
+        if not math.isfinite(mask_probability_threshold) or not 0 < mask_probability_threshold < 1:
+            raise ValueError('Invalid mask probability threshold')
+        self.mask_probability_threshold = float(mask_probability_threshold)
+        self.force_presence_one = bool(force_presence_one)
         self.processor = Sam3Processor(model, resolution=1008, device=str(device))
         self.preview_processor = Sam3Processor(model, resolution=preview_resolution, device=str(device))
         self.last_result = None
@@ -180,6 +185,10 @@ class SAM3ActiveProposer:
             torch.cuda.synchronize(self.device)
 
     def _preview(self, image, candidates):
+        if self.force_presence_one:
+            presence = np.full(len(self.classes), np.nan, dtype=np.float32)
+            presence[candidates] = 1.
+            return candidates, presence, 0.0, 0
         self._sync()
         start = time.perf_counter()
         if not self.preview or len(candidates) <= self.min_active_classes:
@@ -229,6 +238,8 @@ class SAM3ActiveProposer:
 
         # Release previous full-resolution arrays before processing the next image.
         self.last_result = None
+        if self.force_presence_one and class_indices is None:
+            raise ValueError('presence=1 requires explicit known image-level class indices')
         image = Image.fromarray(np.ascontiguousarray(img_bgr[..., ::-1]))
         shape = (image.height, image.width)
         candidates = (list(range(len(self.classes))) if class_indices is None
@@ -242,7 +253,8 @@ class SAM3ActiveProposer:
         masks, scores, labels = [], [], []
         for indices in self._buckets(active):
             out = self._ground(state, indices, expand=True)
-            presence_full = out['presence_logit_dec'].sigmoid().reshape(len(indices))
+            presence_full = (torch.ones(len(indices), device=self.device) if self.force_presence_one
+                             else out['presence_logit_dec'].sigmoid().reshape(len(indices)))
             object_probs = out['pred_logits'].sigmoid().squeeze(-1) * presence_full[:, None]
             for slot, class_index in enumerate(indices):
                 selected = torch.where(object_probs[slot] > self.confidence_threshold)[0]
@@ -253,7 +265,7 @@ class SAM3ActiveProposer:
                     probabilities = F.interpolate(out['pred_masks'][slot, chunk, None].float(),
                                                    size=shape, mode='bilinear', align_corners=False).sigmoid()[:, 0]
                     conf = object_probs[slot, chunk]
-                    masks.extend((probabilities > 0.5).cpu().numpy())
+                    masks.extend((probabilities > self.mask_probability_threshold).cpu().numpy())
                     scores.extend(conf.float().cpu().tolist())
                     labels.extend([class_index + 1] * len(chunk))
             del out
@@ -270,6 +282,8 @@ class SAM3ActiveProposer:
         for i, item in enumerate(self.classes):
             if i not in candidates:
                 reason = 'not_in_allowed_labels'
+            elif self.force_presence_one:
+                reason = 'known_present_imagelevel_label'
             elif presence is None:
                 reason = 'preview_disabled' if not self.preview else 'small_candidate_set'
             elif presence[candidates].max() <= 0:
@@ -286,6 +300,8 @@ class SAM3ActiveProposer:
                 active_class_ids=[i + 1 for i in active],
                 active_class_names=[self.classes[i].name for i in active],
                 candidate_class_ids=[i + 1 for i in candidates],
+                force_presence_one=self.force_presence_one,
+                mask_probability_threshold=self.mask_probability_threshold,
                 preview_presence=[float(p) if np.isfinite(p) else None for p in presence] if presence is not None else None,
                 selection=selection,
                 preview_seconds=preview_seconds, decode_and_filter_seconds=full_seconds,

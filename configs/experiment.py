@@ -21,9 +21,16 @@ PSEUDO = dict(
     min_mask_region_area=0,         # Active 后处理碎片面积阈值；0 关闭
     nms_threshold=0.7,              # 生成阶段重复掩码 IoU 阈值
     max_mask_area_ratio=0.0,         # 最大掩码占图比例；0 不限制
+    force_presence_one=True,        # 已知训练类别存在概率固定为1；验证提议不使用此默认值
+    edge_repair=True,               # 类别并集在合成语义标签前修复边缘
+    mask_logit_threshold=0.4,        # sigmoid后的概率阈值
+    close_kernel=3,
+    close_iterations=1,
+    dilate_pixels=1,
+    diningtable_close_iterations=2,
 )
 
-# 2. MLP：先 SMFA 聚合区域，再投影。v2 的特征扰动正则不是聚合分支。
+# 2. MLP：先硬中心GMP聚合区域，再投影。v2 的特征扰动正则不是聚合分支。
 TRAINING = dict(
     recipe='v1',                   # v1 基础训练；v2 增加正则化默认值
     classifier=None,               # None 按 recipe 选择 linear/cosine
@@ -59,6 +66,12 @@ CLEANUP = dict(
     max_hole_fraction=0.01,        # 可填补孔洞相对掩码面积上限
     nms_iou=0.85,                  # 清理阶段去重 IoU，区别于分类后 NMS
 )
+
+# 4. 训练语义标签只使用同一清理程序的几何部分，无实例分数或跨类NMS。
+PSEUDO_CLEANUP = {key: CLEANUP[key] for key in
+                  ('min_mask_area', 'min_island_area', 'max_hole_area', 'max_hole_fraction')}
+MAINLINE = dict(recipe_id='active_presence1_edge_geometry_gmp2_hcr_v1',
+                semantic_cleanup=True, save_image_features=True)
 
 
 def cli_options(settings):

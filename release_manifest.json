@@ -1,5 +1,6 @@
 {
-  "release": "Original-image hard-center GMP rho0.1 + MLP2 + HCR 2026-10-08",
+  "release": "Presence1 + edge repair + semantic geometry cleanup + GMP2 + HCR 2026-10-11",
+  "recipe_id": "active_presence1_edge_geometry_gmp2_hcr_v1",
   "generated_multiview": false,
   "files": {
     ".env.example": {
@@ -11,16 +12,16 @@
       "sha256": "da866197999ae24f9f5d588de78f267a631824fc26b28f7355219434a7ab66bc"
     },
     "AGENTS.md": {
-      "bytes": 965,
-      "sha256": "77a26bab5dfca654b596525ac1fdf6e2f3f723e675d32300cfaad12c851c66cd"
+      "bytes": 1113,
+      "sha256": "80c43086bbb0acdef42196d5f256643b8946b30bcba77b895911814fd580ebe6"
     },
     "PROJECT_STORAGE_MANUAL.md": {
-      "bytes": 168,
-      "sha256": "1abfebfd053bf9a81389b7d4252612232e7246c98b083200a61cf9cdec0d6693"
+      "bytes": 199,
+      "sha256": "6d697011162a2da5a3ee094dc7a5b804b33fa389037b0556bd24e35e4d616dda"
     },
     "README.md": {
-      "bytes": 1447,
-      "sha256": "a7cd208e8f04bab5bcc49accb7b465c1647ffaeac0a88f134b8147ab574c9e73"
+      "bytes": 2370,
+      "sha256": "5285f16e1701731504ae93974755b3c93cbfe6f7f88273d5a284034b48a3592c"
     },
     "configs/cls_ade20k.txt": {
       "bytes": 1254,
@@ -47,20 +48,20 @@
       "sha256": "57e77a3017a76c06a8d8eb8c27b10a53d68b74c73251396e89061cb4b8e4a918"
     },
     "configs/experiment.py": {
-      "bytes": 4265,
-      "sha256": "0ad10dddbb17ccdff479a2b8d57f7749849163b0fe5c1bf209d6aa54b70864b8"
+      "bytes": 5017,
+      "sha256": "b0028a88aa61aa7905c25dc52a42f2e938797a286e7a552b58e2f8971d5f682f"
     },
     "configs/my_name.txt": {
       "bytes": 122,
       "sha256": "0ce2b3959a6c740d27d74cb70f2d3e64747c09efc674363302411dcbd2fc6f71"
     },
     "docs/MAINLINE.md": {
-      "bytes": 191,
-      "sha256": "68de2c8c1ea526c04955138c0b4e86dbe013548771b1246a20c5014c6ff5423c"
+      "bytes": 243,
+      "sha256": "7ab625e0e18aa7f13407e98dd9612affe26269c297fcaa7bd5b28820214cc31c"
     },
     "docs/PROJECT_STORAGE_MANUAL.md": {
-      "bytes": 189295,
-      "sha256": "d2ca5e4fa1b77c3998d316e596347120b177b99361f15454b595104648b434de"
+      "bytes": 213606,
+      "sha256": "2dd0612f2cd38ce3f2ad2a8c9562b49a5ab8f072640212fc8957477abc39c012"
     },
     "docs/mainline_validation.json": {
       "bytes": 1135,
@@ -79,8 +80,12 @@
       "sha256": "da46ff9bbcb08bcc3123ba3facf8abab7c6f591550f00e68e53be45020af69d0"
     },
     "project_utils/experiment_notify.py": {
-      "bytes": 3005,
-      "sha256": "cba5122c8021302efc1bcd8e91dfde80ab890e620c4d98b53d3170c6fbed20bb"
+      "bytes": 3794,
+      "sha256": "febe6a9519882153798092b1680488e64e309cf615299fe6d2a71fc153bce333"
+    },
+    "project_utils/mainline_selection.py": {
+      "bytes": 1517,
+      "sha256": "9183fa80771995c7a5ae8574ed393981ecaf90647aae1ae21f5d65af2c052ba9"
     },
     "project_utils/metrics.py": {
       "bytes": 1740,
@@ -107,16 +112,16 @@
       "sha256": "fe599d62e452e4f97b16eaee4c5249bed6347dbf01074ea69a7eb2d9264dbcf5"
     },
     "run_generate_proposals_active.py": {
-      "bytes": 7092,
-      "sha256": "194b888bb0ac3f72f5a2e1dbb40d69c517ba09398a974a45f9ab692ce7f2b33e"
+      "bytes": 8029,
+      "sha256": "1bfd6195bd5c215cab676130ac422af9fdfc793169306847f3a60c7b773bfa22"
     },
     "run_inference.py": {
-      "bytes": 21245,
-      "sha256": "7be736c8648fd834d41949aff82ac8fbfb076d45b588318942d4ab96970a163c"
+      "bytes": 21643,
+      "sha256": "1704ea60e344b7217e28b8cbfa4d47f3e5a240daa26476c8cdf2872f3d15b1a2"
     },
     "run_sam3_proposal_demo.py": {
-      "bytes": 13712,
-      "sha256": "f86849a3bd944c33ce80c0f37172713787c36d72fda34908c3d6bc87253c63dc"
+      "bytes": 14079,
+      "sha256": "e1bae9d130e78ff20aedf7b4310174387b99fdbe63176e7c1d7fdac6bbd379a1"
     },
     "sam3-main/LICENSE": {
       "bytes": 7353,
@@ -922,6 +927,10 @@
       "bytes": 6449,
       "sha256": "fc3f99abe5ebde4feca90a81d3207ddd46c731bdf0b5008f7bd67e3166210991"
     },
+    "src/cached_gmp_extractor.py": {
+      "bytes": 3646,
+      "sha256": "f44752e0b3ea5d97cd87de3239a6cc5616b990a10809f1acacf949f1bd05ebe9"
+    },
     "src/feature_adapter.py": {
       "bytes": 7640,
       "sha256": "1e44dcca67329f047ce2494075c5da7d8bb13df4d81a9b343a731df2111661e6"
@@ -939,12 +948,12 @@
       "sha256": "7288e0391cac9e5ddfe1bdd6122c5b16136d45aef90dcdf1c1bfac31bdbffd52"
     },
     "src/feature_extractor_factory.py": {
-      "bytes": 1279,
-      "sha256": "32f4663ca1812c19114b296d6dc8dd24e5913531bac2cde9dddfc35e4da025eb"
+      "bytes": 1534,
+      "sha256": "90324ae5fd930f5a9441ec3e5f251b00ceb546af72c7ce88bf8a6d22802de3bb"
     },
     "src/feature_extractor_sam3.py": {
-      "bytes": 15646,
-      "sha256": "b327693e4ef3a4189ab7f8ad514d13f5c3071ac7347d2fb9476ed0bd52dc0654"
+      "bytes": 16145,
+      "sha256": "1adea8e6f73b9c2dbd6062185ce4caed6b7239de39ae0db30d89eda847a88723"
     },
     "src/feature_signature.py": {
       "bytes": 2728,
@@ -958,9 +967,17 @@
       "bytes": 3850,
       "sha256": "e1ca9e23b5249fd62db6db5527f751b5cb9e66637e39e095019ff8e5b0ac3488"
     },
+    "src/image_token_cache.py": {
+      "bytes": 4137,
+      "sha256": "87d435b1184ac5c837075c810bbb08e87c9ba616282a7a706afaa11bad02f8b0"
+    },
     "src/inference.py": {
       "bytes": 26528,
       "sha256": "450ad84c35ca6d9c8c2af5806ee6fa026ffde2a55c2dd32d44944c7f4df29770"
+    },
+    "src/mask_edge_repair.py": {
+      "bytes": 2989,
+      "sha256": "da805235703f83d3fc3907a445ec53cf8fd155c3a761229ce168b73d6a9c58d5"
     },
     "src/mask_proposer_sam3.py": {
       "bytes": 14538,
@@ -973,6 +990,10 @@
     "src/proposal_cleanup.py": {
       "bytes": 5716,
       "sha256": "95cc01ed83d8734fd3523075a71460dcdd916923f89e6161f987199002f6bea4"
+    },
+    "src/pseudo_label_cleanup.py": {
+      "bytes": 3729,
+      "sha256": "da7c889681c663701e239360a10808bd0b56b4fe53dc096231bf8c9998a78c97"
     },
     "src/region_extractors.py": {
       "bytes": 2709,
@@ -1018,9 +1039,13 @@
       "bytes": 10168,
       "sha256": "4f8b274ed4dad1df0dd203e5424119ab9e8294dc4c3f99b54765d71366180e6a"
     },
+    "tests/test_edge_feature_cache.py": {
+      "bytes": 7596,
+      "sha256": "ac00a64b8cfd65d6dfc3d3c9e878b1a29f7f2a1183e9a439acf9287abe910ef7"
+    },
     "tests/test_experiment_notify.py": {
-      "bytes": 1311,
-      "sha256": "67e9d13e9bf7799260337b38836d5a064de46e8858b960f2a9be3b0b79678d19"
+      "bytes": 2436,
+      "sha256": "113d81e667c912241af4ca7c50ea3a90d377b125cd3c957b74f4e77dfd964aca"
     },
     "tests/test_experimental_adaptive_rescue.py": {
       "bytes": 2829,
@@ -1154,9 +1179,17 @@
       "bytes": 1525,
       "sha256": "b62429e8c8beed80c6618e0b4ac322c45f04fa24a4c3f032c6a3d7d228603c65"
     },
+    "tests/test_mainline_full.py": {
+      "bytes": 7439,
+      "sha256": "c6998d17775db38375d826fbb88351be24ae4bdfb89d3359030376ce69af50d6"
+    },
     "tests/test_mainline_gmp.py": {
       "bytes": 3735,
       "sha256": "86824be1d2ceb7b8544f3077e6d29b65bf61176a3278ef894227d5f3a1eda1a7"
+    },
+    "tests/test_mainline_promotion.py": {
+      "bytes": 5538,
+      "sha256": "96dd2fb30ae0188247538c4ebf2e3beba21fc02ad8b8528d4c6229d0ce382afc"
     },
     "tests/test_mask_proposers.py": {
       "bytes": 1160,
@@ -1173,6 +1206,10 @@
     "tests/test_proposal_cleanup.py": {
       "bytes": 4534,
       "sha256": "b0817eaa0823c9c145d5288fb486fbd8b9b5d6ed931557b826f22d32e637a2b6"
+    },
+    "tests/test_pseudo_cleanup_ablation.py": {
+      "bytes": 6764,
+      "sha256": "6a65bfee9a75c8f0e2cf60a3a863ad7228da244c4f0dbb5fc5383db939e3ed8d"
     },
     "tests/test_pseudo_mask_evaluation.py": {
       "bytes": 13625,
@@ -1241,6 +1278,14 @@
     "tests/test_voc_trainaug.py": {
       "bytes": 3603,
       "sha256": "8145a8fd95d59011c0adb3db9e684d6cfd9dd09e356e58f9208fa3eb048acbc4"
+    },
+    "tools/activate_mainline.py": {
+      "bytes": 6575,
+      "sha256": "3f9b4985863c7de058ed999030056f1803f85cdc4e6ed855a8afdb1cca9c43eb"
+    },
+    "tools/clean_pseudo_labels.py": {
+      "bytes": 2995,
+      "sha256": "45adeced4a2694946b110723649f331dec7d0d81acca9a8ef39508330630c3e9"
     },
     "tools/debug_grid_proposer.py": {
       "bytes": 4288,
@@ -1403,8 +1448,8 @@
       "sha256": "84cd50864b3ed2b8f51195b02a7b96565ccb8ba8ecb3b53ece18c3fb137ef751"
     },
     "tools/generate_pseudo_masks_sam3.py": {
-      "bytes": 31635,
-      "sha256": "70b7e6bfd76ea91030bd1180d9c928d7f0eaf6566712c872b951785a24f03204"
+      "bytes": 37117,
+      "sha256": "c5f78ee46847e31d077f056c0e0afe22d5727d2b41cf2725fbdfefc1ac2b6ce0"
     },
     "tools/generate_voc_imagelevel_train_val.py": {
       "bytes": 5482,
@@ -1431,16 +1476,16 @@
       "sha256": "47b36e12709f6b92e1c1badbfc2c5f1f735e42c2d71af32ec78182d1082a430c"
     },
     "tools/proposal_demo/active_proposer.py": {
-      "bytes": 15962,
-      "sha256": "2d05d614ae21a431f6aef4db56ec366b25c97c5be21b3e306c3a9bc85782bd1a"
+      "bytes": 17064,
+      "sha256": "2868f55769443fd7d9ff824be6d35120f6086c2a173b483c05cc75562d4e9f88"
     },
     "tools/proposal_demo/active_utils.py": {
       "bytes": 4105,
       "sha256": "403f5a74ed1ebf78b067fc57c319b0b577abf16280e99c73b294c983db8890fe"
     },
     "tools/proposal_demo/test_active.py": {
-      "bytes": 13972,
-      "sha256": "a6787c3db435b33d97ec1d54bfbbdac424ddfd2ecd57f305ec0f2c5f48b3abae"
+      "bytes": 14038,
+      "sha256": "514377a2093f8b32e7bf6329827420e40e3c830eba1b77e6d24744d8670a7d4f"
     },
     "tools/proposal_demo/visualize.py": {
       "bytes": 4913,
@@ -1459,12 +1504,20 @@
       "sha256": "c917d0cca7cf3718cce835cc27846836125d231bf154042c827228237d95f1d7"
     },
     "tools/run_mainline.py": {
-      "bytes": 4460,
-      "sha256": "5cf2f5e21bb9945b72ad9ec87d09c181786923841a8b5143c4391c40759381d0"
+      "bytes": 5376,
+      "sha256": "e8c52ef1f200bd69fd3092d8cb63c58df61a01079261f7394b007ecedd61764e"
+    },
+    "tools/run_mainline_full.py": {
+      "bytes": 51233,
+      "sha256": "cb6190d20753058305a303e9589c2e7f2b3a5a71430c9cd66ed3389ca83f52da"
     },
     "tools/run_pipeline.py": {
       "bytes": 11182,
       "sha256": "15e09321197f19cbc8e3f54f57885116ca4b7265bac9eb70da3913f50ca6ffe2"
+    },
+    "tools/run_pseudo_cleanup_ablation.py": {
+      "bytes": 31519,
+      "sha256": "0ff8efe1c77484290277c775d1955e28ec48d5dc1378a271bd32cd0ec9f06149"
     },
     "tools/run_pseudo_two_gpus.py": {
       "bytes": 6848,
