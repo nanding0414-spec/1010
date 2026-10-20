@@ -1,0 +1,124 @@
+{
+  "recipe_id": "r3_record_v1",
+  "arm": "R3",
+  "crop_fraction": 0.8,
+  "worker_rules": {
+    "resolution": 1008,
+    "bucket_size": 4,
+    "seed": 42,
+    "object_score": 0.15,
+    "probability": 0.5,
+    "min_area": 100,
+    "max_area_ratio": 0.95,
+    "nms": 0.7,
+    "per_class_cap": 1,
+    "rho": 0.1,
+    "proposal": 0.4,
+    "retrieval": 0.95,
+    "margin": 0.1,
+    "novel_fraction": 0.1,
+    "proposal_weight": 0.2,
+    "centroid_weight": 0.2
+  },
+  "worker_sha256": "90dc80fe59ee7666be1b2217966fa24d624aa0cbe82000a6a5e9d9fdee974668",
+  "source_signature": {
+    "aggregation": {
+      "empty": "zero",
+      "failure": "raise_no_fallback",
+      "geometry": "stride14_center7_floor_original_coordinates_nearest_centroid_rowmajor",
+      "normalization": "phase_l2_then_single_phase_mean_then_l2",
+      "phases": [
+        [
+          0,
+          0
+        ]
+      ],
+      "residual_limit": 0.0001,
+      "rho": 0.1,
+      "solver": "fp32_cholesky_smaller_primal_or_dual",
+      "type": "hard_center_gmp",
+      "version": 1,
+      "weights": "uniform"
+    },
+    "backbone": "sam3",
+    "checkpoint_sha256": "9999e2341ceef5e136daa386eecb55cb414446a00ac2b55eb2dfd2f7c3cf8c9e",
+    "context_subtract": 0.0,
+    "embed_dim": 1280,
+    "feature_grid": [
+      72,
+      72
+    ],
+    "feature_level": -1,
+    "feature_source": "trunk_fpn",
+    "format_version": 3,
+    "model_name": "sam3",
+    "precision_policy": "standard_vit_mlp_fp32_v1",
+    "resolution": 1008,
+    "token_norm": "layernorm",
+    "use_bf16": false
+  },
+  "baseline": {
+    "pooling": "hard_center_gmp",
+    "rho": 0.1,
+    "centroid_weight": 0.2,
+    "hcr": true,
+    "gallery_members": 34880,
+    "background_members": 10569,
+    "adapter": [
+      1280,
+      512,
+      256
+    ],
+    "retrieval_mode": "balanced",
+    "topk": 25,
+    "class_topm": 5,
+    "search_multiplier": 2,
+    "nms_iou": 0.4,
+    "proposal_score_weight": 0.2,
+    "instance_score_threshold": 0.02
+  },
+  "training": "No new training; use the original matching GMP MLP and bank for each seed.",
+  "record": {
+    "dataset": "VOC2012 val (development)",
+    "images": 1449,
+    "seeds": [
+      42,
+      123,
+      2026
+    ],
+    "per_seed": {
+      "42": {
+        "baseline_mIoU": 0.8682171707587669,
+        "R3_mIoU": 0.8693365976634705,
+        "delta_pp": 0.11194269047035688
+      },
+      "123": {
+        "baseline_mIoU": 0.8632169216821646,
+        "R3_mIoU": 0.8641349580869414,
+        "delta_pp": 0.09180364047768341
+      },
+      "2026": {
+        "baseline_mIoU": 0.8637458319130259,
+        "R3_mIoU": 0.8647497082234042,
+        "delta_pp": 0.10038763103783488
+      }
+    },
+    "baseline_mean_mIoU": 0.8650599747846525,
+    "R3_mean_mIoU": 0.8660737546579388,
+    "paired_gain": {
+      "mean_gain_pp": 0.10137798732862506,
+      "sample_std_pp": 0.010105985248301178,
+      "t95_interval_pp": [
+        0.07627332825798346,
+        0.12648264639926665
+      ],
+      "positive_seeds": 3,
+      "n": 3,
+      "limitation": "Three training seeds, small-sample t interval; inspected VOC development data"
+    },
+    "summary_sha256": "bd836079a0732da532e5a6c2ac565c3aced3f1e5702662d9575d804c5c7338f3",
+    "metrics_sha256": "253e13f99cfe28e2245f066b04bebd6d74df2992b19687dfa6ef60b2d804ba5d",
+    "per_class_sha256": "e725535f4a096d0a92650417c32a0537689a0eb16ce08dfe83b9e5a1f824a24a",
+    "scope": "Observed original R3 results, not a new GPU validation of this publication wrapper; no independent test claim."
+  }
+}

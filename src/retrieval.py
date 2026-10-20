@@ -24,6 +24,7 @@ class RetrievalPrediction:
     label: str
     score: float
     margin: float
+    class_scores: tuple[float, ...] | None = None
 
 
 def build_retrieval_context(
@@ -158,6 +159,7 @@ def classify_queries(
                 label=str(best),
                 score=float(best_score),
                 margin=float(best_score - second_score),
+                class_scores=tuple(float(v) for v in class_scores) if mode == "balanced" else None,
             )
         )
     return predictions
