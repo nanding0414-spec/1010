@@ -81,6 +81,11 @@ INF_INSTANCE_SCORE_THR = env_get_float(
 
 # 分类后实例去重 IoU 阈值，与提议清理 NMS 不同。
 INF_NMS_IOU = env_get_float("OVERRIDE_INF_NMS_IOU", 0.4)
+from configs.experiment import GEOMETRIC_COMPLETION as _GEOMETRIC_COMPLETION_DEFAULTS
+INF_GEOMETRIC_COMPLETION = dict(_GEOMETRIC_COMPLETION_DEFAULTS)
+for _key, _value in list(INF_GEOMETRIC_COMPLETION.items()):
+    _reader = env_get_str if isinstance(_value, str) else env_get_bool if isinstance(_value, bool) else env_get_int if isinstance(_value, int) else env_get_float
+    INF_GEOMETRIC_COMPLETION[_key] = _reader('OVERRIDE_INF_GEOMETRIC_COMPLETION_' + _key.upper(), _value)
 # 评测忽略像素标签 ID。
 INF_IGNORE_INDEX = 255
 # 基础检索近邻数量 K。

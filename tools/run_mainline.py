@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Strict inference for the selected presence1/edge/geometry GMP2/HCR mainline."""
+"""Strict LSA + HC-GMP + PRR inference with an already postfiltered single bank."""
 import argparse
 import json
 import os
@@ -25,7 +25,8 @@ def main():
     p.add_argument('--gpu', type=int, default=1)
     p.add_argument('--seed', type=int, choices=[42,123,2026])
     p.add_argument('--preflight-only',action='store_true',help='Validate selected artifacts and GPU; do not run evaluation')
-    p.add_argument('--no-hcr', action='store_true', help='Clean-baseline ablation only')
+    p.add_argument('--no-hcr', action='store_true', help='Legacy clean-only ablation: also disables PRR')
+    p.add_argument('--no-prr', action='store_true', help='Explicit HCR-only ablation')
     a = p.parse_args()
     from project_utils.mainline_selection import resolve_mainline_inputs
     try:
@@ -39,6 +40,17 @@ def main():
         if not item.is_file():
             p.error(f'Missing required input: {item}')
     signature = json.loads((a.bank/'meta/feature_signature.json').read_text())
+    post = a.bank/'meta/postfilter.json'
+    if not post.is_file():
+        p.error('Use the LSA post5 single bank; missing meta/postfilter.json (see section109)')
+    post = json.loads(post.read_text())
+    if post.get('percent') != 5 or post.get('background_deleted') != 0:
+        p.error('Mainline requires post-LSA FG5% and no background deletion')
+    from src.semantic_bank_filter import validate_filtered_bank
+    try:
+        validate_filtered_bank(a.bank)
+    except (ValueError,KeyError,OSError) as exc:
+        p.error(str(exc))
     from tools.run_mainline_full import sha
     if signature.get('adapter',{}).get('sha256')!=sha(a.adapter):
         p.error('Bank and MLP checkpoint hashes differ')
@@ -78,11 +90,13 @@ def main():
         OVERRIDE_INF_CLASS_TOPM='5', OVERRIDE_INF_RETRIEVAL_SEARCH_MULTIPLIER='2',
         OVERRIDE_INF_CENTROID_WEIGHT='0.2', OVERRIDE_INF_RETRIEVAL_MARGIN_THR='0',
         OVERRIDE_INF_PROPOSAL_SCORE_WEIGHT='0.2', OVERRIDE_INF_NMS_IOU='0.4',
-        OVERRIDE_INF_INSTANCE_SCORE_THR='0.02')
+        OVERRIDE_INF_INSTANCE_SCORE_THR='0.02', OVERRIDE_MIN_MASK_AREA='100')
     command = [sys.executable, '-B', str(ROOT/'run_inference.py'), '--strict-eval',
         '--output-dir', str(a.output_dir.resolve()), '--results-json', str(a.output_dir.resolve()/'metrics.json')]
     if not a.no_hcr:
         command += ['--rescue', '--rescue-raw-dir', str(a.raw_proposals_dir.resolve())]
+        if not a.no_prr:
+            command += ['--prr']
     started = __import__('time').monotonic()
     status = 'failed'
     try:

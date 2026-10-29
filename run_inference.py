@@ -64,6 +64,17 @@ def load_strict_proposals(directory, image_id, height, width):
     return [mask.astype(bool) for mask in masks], scores.tolist()
 
 
+def postprocess_semantic_map(instances, height, width, completion_config, *, image_id=None, debug_dir=None):
+    """Exact original rasterization, then optional clean-source-only completion."""
+    semantic = rasterize_instances(instances, height, width)
+    if not completion_config.enabled:
+        return semantic, None
+    from src.geometric_completion import complete_semantic_map
+    sources = [r for r in instances if r.get('geometric_completion_source') is True]
+    return complete_semantic_map(semantic, sources, completion_config, image_id=image_id,
+        class_to_id={name: i+1 for i,name in enumerate(DATASET_CLASSES)}, debug_dir=debug_dir)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cleanup-config", type=Path, help="CleanupConfig JSON applied to cached proposals in memory")
@@ -77,11 +88,30 @@ def main(argv=None):
     parser.add_argument('--feature-image-scale', type=int, choices=[1,4], default=4)
     parser.add_argument('--rescue', action='store_true', help='Enable HCR high-confidence retrieval rescue from the raw companion of a clean cache')
     parser.add_argument('--rescue-raw-dir', type=Path, help='Override the raw companion directory recorded in cleanup_config.json')
+    parser.add_argument('--prr', action='store_true', help='After HCR, apply original-image strict R3 then Loose E')
+    parser.add_argument('--geometric-completion', action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument('--geometric-completion-config', type=Path, help='GeometricCompletionConfig JSON overrides')
+    parser.add_argument('--geometric-completion-debug', action=argparse.BooleanOptionalAction, default=None)
     args = parser.parse_args(argv)
+    from src.geometric_completion import GeometricCompletionConfig, summarize_completion
+    completion_settings = dict(cfg_module.INF_GEOMETRIC_COMPLETION)
+    if args.geometric_completion_config:
+        completion_settings.update(json.loads(args.geometric_completion_config.read_text(encoding='utf8')))
+    if args.geometric_completion is not None: completion_settings['enabled'] = args.geometric_completion
+    if args.geometric_completion_debug is not None: completion_settings['debug_visualize'] = args.geometric_completion_debug
+    completion_config = GeometricCompletionConfig(**completion_settings)
     if args.rescue and (not args.strict_eval or not INF_LOAD_PROPOSALS or args.cleanup_config or DATASET_TYPE != 'voc'):
         parser.error('--rescue requires VOC, --strict-eval, cached clean proposals, and no --cleanup-config')
     if args.rescue_raw_dir and not args.rescue:
         parser.error('--rescue-raw-dir requires --rescue')
+    if args.prr and (not args.rescue or args.feature_image_dir or completion_config.enabled):
+        parser.error('--prr requires original-image HCR and no experimental geometric completion')
+    if args.prr and (cfg_module.MIN_MASK_AREA != 100 or cfg_module.INF_RETRIEVAL_MODE != 'balanced'
+            or INF_TOPK_NEIGH != 25 or cfg_module.INF_CLASS_TOPM != 5 or cfg_module.INF_CENTROID_WEIGHT != .2
+            or cfg_module.INF_RETRIEVAL_SEARCH_MULTIPLIER != 2 or INF_NMS_IOU != .4
+            or cfg_module.INF_PROPOSAL_SCORE_WEIGHT != .2 or cfg_module.INF_RETRIEVAL_MARGIN_THR != 0
+            or cfg_module.INF_INSTANCE_SCORE_THR != .02):
+        parser.error('--prr mainline requires area100 and balanced K25/top5/center.2')
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
         parser.error('Invalid evaluation shard')
     if args.feature_image_dir and (DATASET_TYPE != 'voc' or not INF_LOAD_PROPOSALS):
@@ -102,6 +132,9 @@ def main(argv=None):
 
     dataset_root = INF_DATASET_ROOT
     feature_bank_root = INF_FEATURE_BANK_ROOT
+    if args.prr:
+        from src.semantic_bank_filter import validate_filtered_bank
+        validate_filtered_bank(feature_bank_root)
     sample_infos = load_eval_samples(dataset_root)
     if args.eval_limit:
         sample_infos = sample_infos[:args.eval_limit]
@@ -132,10 +165,12 @@ def main(argv=None):
                     raise FileNotFoundError(proposal)
 
     # Load feature bank
-    _, fg_names, bg_names = load_class_mapping(os.path.join(feature_bank_root, 'meta'))
+    class_mapping, fg_names, bg_names = load_class_mapping(os.path.join(feature_bank_root, 'meta'))
+    from src.semantic_bank_filter import gallery_class_order
+    class_order = gallery_class_order(feature_bank_root, list(dict.fromkeys(fg_names + bg_names)))
     class_to_feats = load_class_features(
         os.path.join(feature_bank_root, 'features'),
-        list(dict.fromkeys(fg_names + bg_names)),
+        class_order,
     )
     assert len(class_to_feats) > 0, "Empty feature bank. Please run run_build_feature_bank.py first."
 
@@ -154,6 +189,8 @@ def main(argv=None):
         mat = mat.astype(np.float32)
         valid = np.all(np.isfinite(mat), axis=1) & (np.linalg.norm(mat, axis=1) >= 1e-6)
         if not np.all(valid):
+            if args.prr:
+                raise ValueError(f'Invalid gallery vectors in mainline class {name}')
             print(f"[FeatureBank] Dropped {int((~valid).sum())} invalid vectors from {name}")
         mat = mat[valid]
         if mat.shape[0] == 0:
@@ -188,6 +225,11 @@ def main(argv=None):
         )
     retrieval_context = build_retrieval_context(all_feats, gallery_labels)
     faiss_index = build_faiss_index(all_feats)
+    prr = None
+    if args.prr:
+        from src.progressive_retrieval_recovery import ProgressiveRetrievalRecovery
+        prr = ProgressiveRetrievalRecovery(cfg_module.SAM3_CKPT, device, dino,
+            all_feats, gallery_labels, faiss_index, retrieval_context, class_mapping)
     model_version = get_model_version_str()
 
     if INF_LOAD_PROPOSALS:
@@ -216,6 +258,7 @@ def main(argv=None):
     evaluated_ids = []
     proposal_count_before = proposal_count_after = 0
     rescue_reports = []
+    completion_reports = []
 
     for sample in tqdm(sample_infos, desc=f"Infer ({model_version})", ncols=100):
         img_id = sample['id']
@@ -242,11 +285,6 @@ def main(argv=None):
             feature_input = feature_rgb if feature_rgb is not None else img_rgb
             base_extractor.set_image_source(feature_images[img_id] if feature_images is not None else img_path, feature_input)
             base_extractor.cache_image_features(feature_input)
-        if gt_path and os.path.isfile(gt_path):
-            gt = np.array(Image.open(gt_path))
-            if args.strict_eval and gt.shape != (h, w):
-                raise ValueError(f"GT/image dimensions differ: {gt_path}")
-
         if INF_LOAD_PROPOSALS:
             pre_masks, pre_scores = (load_strict_proposals(proposals_dir, img_id, h, w)
                                      if args.strict_eval else load_proposals(proposals_dir, img_id))
@@ -278,6 +316,7 @@ def main(argv=None):
                 precomputed_scores=pre_scores,
                 retrieval_context=retrieval_context,
                 strict_errors=args.strict_eval,
+                capture_clean_sources=completion_config.enabled,
                 **rescue_kwargs,
             )
             if rescue_source is not None:
@@ -294,10 +333,29 @@ def main(argv=None):
                 topk_neigh=INF_TOPK_NEIGH,
                 retrieval_context=retrieval_context,
                 strict_errors=args.strict_eval,
+                capture_clean_sources=completion_config.enabled,
             )
 
-        pred_before = rasterize_instances(instances, h, w)
+        completion_debug = (Path(save_dir)/'geometric_completion_debug'/img_id
+            if completion_config.debug_visualize and len(completion_reports)<completion_config.debug_image_limit else None)
+        pred_before, completion_report = postprocess_semantic_map(instances, h, w, completion_config,
+            image_id=img_id, debug_dir=completion_debug)
+        if prr is not None:
+            pred_before, prr_report = prr.recover(img_rgb, pred_before, img_id)
+            report_path = Path(save_dir)/'prr'/f'{img_id}.json'
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(json.dumps(prr_report, indent=2))
+        if completion_report is not None:
+            completion_reports.append(completion_report)
+            completion_path=Path(save_dir)/'geometric_completion'/f'{img_id}.json'
+            completion_path.parent.mkdir(parents=True,exist_ok=True)
+            completion_path.write_text(json.dumps(completion_report,indent=2),encoding='utf8')
 
+        # Evaluation labels never enter HCR/PRR decisions.
+        if gt_path and os.path.isfile(gt_path):
+            gt = np.array(Image.open(gt_path))
+            if args.strict_eval and gt.shape != (h, w):
+                raise ValueError(f"GT/image dimensions differ: {gt_path}")
         if gt is not None:
             evaluated_ids.append(img_id)
             if DATASET_TYPE == "ade20k":
@@ -343,6 +401,8 @@ def main(argv=None):
         class_names=eval_class_names,
     )
     print(summary)
+    if completion_config.enabled:
+        print('[Geometric completion]', json.dumps(summarize_completion(completion_reports)))
 
     per_class = metrics['per_class_iou']
     print("\nPer-class IoU Table:")
@@ -409,6 +469,12 @@ def main(argv=None):
             "eval_limit": args.eval_limit, "cleanup": cleanup.to_dict() if cleanup else None,
             "proposal_count_before": proposal_count_before, "proposal_count_after": proposal_count_after,
             "feature_signature": dino.feature_signature(),
+            "recipe_id": 'lsa_hcgmp_prr_v1' if args.prr else None,
+            "modules": ['LSA', 'HC-GMP', 'PRR'] if args.prr else None,
+            "progressive_retrieval_recovery": dict(enabled=bool(prr),
+                stages=['HCR','Strict R3','Loose E'] if prr else [],
+                semantics='original-image features; same MLP and single bank',
+                background_only=True),
             "feature_bank": str(Path(INF_FEATURE_BANK_ROOT).resolve()),
             "proposals_dir": str(Path(proposals_dir).resolve()) if proposals_dir else None,
             "inference_settings": {
@@ -423,6 +489,9 @@ def main(argv=None):
                                               accepted=sum(x['selection'].get('accepted', 0) for x in rescue_reports),
                                               added_pixels=sum(x['selection'].get('added_pixels', 0) for x in rescue_reports),
                                               note='Proposal counts above describe the unchanged clean input; extra counts are per image here.')
+        if completion_config.enabled:
+            payload['geometric_completion'] = dict(parameters=asdict(completion_config),
+                **summarize_completion(completion_reports), source='retained_clean_instances_only')
         args.results_json.parent.mkdir(parents=True, exist_ok=True)
         temporary = args.results_json.with_name(args.results_json.name + ".tmp")
         temporary.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")

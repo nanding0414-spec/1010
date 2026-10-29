@@ -107,12 +107,13 @@ class FullMainlineTests(unittest.TestCase):
 
     def test_fp32_proposer_patch_precedes_active_constructor(self):
         import torch
+        from tools.proposal_demo.test_active import fake_sam3
         from run_sam3_proposal_demo import parse_args,build_proposer
         model=unittest.mock.MagicMock();model.to.return_value=model;model.eval.return_value=model
         def construct(**kwargs):
             correction.assert_called_once_with(model);model.float.assert_called_once();return kwargs
         args=parse_args(['--precision','fp32'],bulk=True)
-        with patch('sam3.model_builder.build_sam3_image_model',return_value=model), \
+        with fake_sam3(), patch('sam3.model_builder.build_sam3_image_model',return_value=model), \
              patch('src.sam3_precision.use_standard_vit_mlp',return_value=1) as correction, \
              patch('tools.proposal_demo.active_proposer.SAM3ActiveProposer',side_effect=construct):
             actual=build_proposer(args,torch.device('cpu'))

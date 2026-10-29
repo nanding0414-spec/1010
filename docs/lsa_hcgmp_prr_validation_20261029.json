@@ -1,0 +1,99 @@
+{
+  "recipe_id": "lsa_hcgmp_prr_v1",
+  "scope": "Source integration and CPU consistency only; no new full GPU quality run",
+  "runtime_source_digest_sha256": "091d492b959c90dd61428c64e1b60961111a6a3c9668bfa7bfc44f0d3d6bc01a",
+  "local": {
+    "tests": 82,
+    "passed": 82,
+    "skipped": 0
+  },
+  "cluster_unit_tests": {
+    "job_id": "3838150",
+    "tests": 89,
+    "passed": 89,
+    "skipped": 0,
+    "receipt_sha256": "4d53c245e6fc67080881f2c6ee042b1756ffa94473d3b7a0316a90fc866fdca3",
+    "job_outcome": "FAILED after all unit tests, before conversion: test driver mistakenly used acceptance_002 instead of existing acceptance_001"
+  },
+  "cluster_conversion": {
+    "job_id": "3838928",
+    "slurm_state": "COMPLETED",
+    "exit_code": "0:0",
+    "receipt_sha256": "807e3b4352374321170e45e529b2eaa0c086af91077f013c474e3831b7f692b2",
+    "seeds": [
+      42,
+      123,
+      2026
+    ],
+    "projection_rows_per_seed": 1024,
+    "projection_atol": 1e-06,
+    "projection_rtol": 1e-06,
+    "maxabs_per_seed": [
+      1.043081283569336e-07,
+      1.043081283569336e-07,
+      1.1175870895385742e-07
+    ],
+    "retained_members_per_seed": 36231,
+    "retained_ids_exact_all3": true,
+    "saved_mask_score_pixel_replays": [
+      {
+        "seed": 42,
+        "image": "2007_000033",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      },
+      {
+        "seed": 42,
+        "image": "2007_000042",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      },
+      {
+        "seed": 123,
+        "image": "2007_000033",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      },
+      {
+        "seed": 123,
+        "image": "2007_000042",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      },
+      {
+        "seed": 2026,
+        "image": "2007_000033",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      },
+      {
+        "seed": 2026,
+        "image": "2007_000042",
+        "pixel_exact": true,
+        "changed_pixels": 0
+      }
+    ]
+  },
+  "attempt_history": [
+    {
+      "job": "3838035",
+      "outcome": "CANCELLED",
+      "reason": "Isolated publication snapshot omitted test-only dependencies; no model conversion started"
+    },
+    {
+      "job": "3838150",
+      "outcome": "FAILED",
+      "reason": "89/89 tests passed; subsequent driver source acceptance path typo; no source model read before failure"
+    }
+  ],
+  "GT_read": false,
+  "new_training": false,
+  "new_SAM3_or_GMP": false,
+  "new_full_quality_evaluation": false,
+  "resources": {
+    "cluster_cpus": 6,
+    "memory_GiB": 24,
+    "allocated_V100s": 1,
+    "CUDA_VISIBLE_DEVICES": ""
+  }
+}

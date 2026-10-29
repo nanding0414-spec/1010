@@ -1,0 +1,24 @@
+{
+  "recipe_id": "lsa_hcgmp_prr_v1",
+  "method": "LSA + HC-GMP + PRR",
+  "modules": {
+    "LSA": "Lightweight Semantic Adaptation",
+    "HC-GMP": "Hard-Center Generalized Max Pooling",
+    "PRR": "Progressive Retrieval Recovery"
+  },
+  "training_labels": "original class-order ownership; presence=1; class-union probability0.4 edge repair and geometric cleanup",
+  "training": {"backbone_frozen": true, "adapter": [1280,512,256], "activation": "GELU", "loss": "CE+0.5SupCon", "epochs": 50, "steps_per_epoch": 100, "selection": "balanced_macro_first_strict_max", "topk": 25, "class_topm": 5, "search_multiplier": 2, "centroid_weight": 0.2},
+  "aggregation": {"name": "hard_center_gmp", "rho": 0.1, "precision": "fp32", "resolution": 1008, "training_region_min_area": 300},
+  "bank": {"prefilter_percent": 0, "postfilter_percent": 5, "background_drop_percent": 0, "single_bank": true, "ranking": "FP32 class mean Euclidean distance; numpy argsort descending; retained source order", "gallery_order": "lexical class names including background; retained within-class source order"},
+  "inference": {"classified_min_mask_area": 100, "nms_iou": 0.4, "topk": 25, "class_topm": 5, "search_multiplier": 2, "centroid_weight": 0.2, "proposal_score_weight": 0.2, "instance_score_threshold": 0.02},
+  "prr": {"stages": ["HCR", "Strict R3", "Loose E"], "crop_fraction": 0.8, "candidate_semantics": "original-image tokens + same LSA and bank", "proposal": 0.4, "strict_score": 0.95, "strict_margin": 0.1, "loose_score": 0.9, "loose_margin": 0.05, "novel_fraction": 0.1, "background_only": true},
+  "record": {
+    "dataset": "VOC2012 val (development)", "images": 1449, "seeds": [42,123,2026],
+    "per_seed_mIoU_percent": [87.18510366582714,87.08809049448544,87.03237153523482],
+    "mean_mIoU_percent": 87.10185523184913, "sampleSD_pp": 0.07729085925797713,
+    "source_version": "small_mask_hcr_20261027_200000", "arm": "C_area100",
+    "manifest_sha256": "7311538b46f35c40ff79641f57e0eae8f8db4a29c0f91d3302049b92127ddff3",
+    "binding": "deac45aa31d178600e55c58c54d56db1fc288f7199fea11bb61ec52363a50200", "independent_audit_job": "3822332",
+    "scope": "Accepted historical three-seed development result; publication integration is not a new GPU accuracy run or independent test."
+  }
+}

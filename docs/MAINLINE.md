@@ -1,3 +1,5 @@
-# 主线说明入口
+# 当前主线入口
 
-唯一操作手册为[PROJECT_STORAGE_MANUAL.md](PROJECT_STORAGE_MANUAL.md)，当前presence=1、边缘修复、语义几何清理、GMP＋MLP2＋HCR主线见第46节。此前章节保留历史版本及实验记录。
+当前正式模型为 **LSA + HC-GMP + PRR**：balanced选模、MLP前不删/后删5%、分类面积100、HCR→Strict R3→Loose E。
+
+唯一操作手册：[PROJECT_STORAGE_MANUAL.md](PROJECT_STORAGE_MANUAL.md)，当前操作见第109节。命令和结果边界见[README](../README.md)。第46/84节与旧r3_record_v1保留历史复现，不是当前默认配方。

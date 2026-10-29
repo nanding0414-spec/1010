@@ -34,15 +34,15 @@ PSEUDO = dict(
 TRAINING = dict(
     recipe='v1',                   # v1 基础训练；v2 增加正则化默认值
     classifier=None,               # None 按 recipe 选择 linear/cosine
-    selection_metric=None,         # None 按 recipe 选择 knn/balanced
+    selection_metric='balanced',   # LSA: production-aligned macro first strict max
     feature_dropout=None,          # 特征维度随机置零比例；None 跟随 recipe
     consistency_weight=None,       # 扰动前后特征一致性损失权重
     label_smoothing=None,          # 分类标签平滑比例
     cosine_scale=16.0,             # cosine 分类器 logits 缩放
     eval_class_topm=5,             # 内部检索评估每类近邻数
-    eval_centroid_weight=0.4,       # 内部检索类别中心权重
+    eval_centroid_weight=0.2,       # 与最终检索一致
     eval_search_multiplier=2,      # 内部候选检索数量倍数
-    eval_topk=None,                # 内部检索 K；None 跟随 recipe
+    eval_topk=25,                  # 生产 balanced K
     epochs=50,                     # 训练轮数
     steps_per_epoch=100,           # 每轮采样批次数
     classes_per_batch=8,           # 每批抽取类别数
@@ -70,8 +70,24 @@ CLEANUP = dict(
 # 4. 训练语义标签只使用同一清理程序的几何部分，无实例分数或跨类NMS。
 PSEUDO_CLEANUP = {key: CLEANUP[key] for key in
                   ('min_mask_area', 'min_island_area', 'max_hole_area', 'max_hole_fraction')}
-MAINLINE = dict(recipe_id='active_presence1_edge_geometry_gmp2_hcr_v1',
-                semantic_cleanup=True, save_image_features=True)
+MAINLINE = dict(recipe_id='lsa_hcgmp_prr_v1',
+                recipe='configs/recipes/lsa_hcgmp_prr_v1.json',
+                semantic_cleanup=True, save_image_features=True,
+                prefilter_percent=0, postfilter_percent=5,
+                classified_min_mask_area=100, prr=True)
+
+# Optional, class-agnostic completion after clean rasterization and HCR.
+# Retained clean instances reuse their existing acceptance thresholds/scores.
+GEOMETRIC_COMPLETION = dict(
+    enabled=False, mode='legacy', kernel_ratio=0.10, min_kernel=3, max_kernel=31,
+    min_mask_density=0.15, min_component_area=16,
+    max_component_ratio=0.10, max_total_add_ratio=0.15, min_enclosure=0.35,
+    bbox_only=True, background_only=True,
+    debug_visualize=False, debug_image_limit=5,
+    local_min_thickness=6.0, local_max_gap_ratio=1.0, local_min_alignment=0.70,
+    support_search_pixels=31, support_depth_pixels=16, support_alignment_padding=3,
+    support_thickness_quantile=0.25, support_gap_quantile=0.75,
+)
 
 
 def cli_options(settings):

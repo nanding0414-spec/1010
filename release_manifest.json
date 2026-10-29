@@ -1,11 +1,12 @@
 {
-  "release": "R3 record recipe and experiment manual through section 84, 2026-10-20",
-  "recipe_id": "r3_record_v1",
-  "base_mainline_recipe_id": "active_presence1_edge_geometry_gmp2_hcr_v1",
-  "base_commit": "315de02763df81892fe43d10ff29d700769b2dad",
-  "generated_multiview": false,
-  "R3_supplementary_center_crop": true,
-  "baseline_centroid_weight": 0.2,
+  "release": "LSA + HC-GMP + PRR mainline, 2026-10-29",
+  "recipe_id": "lsa_hcgmp_prr_v1",
+  "base_commit": "634730200007670430d59976cb820bd161632e4d",
+  "modules": {
+    "LSA": "Lightweight Semantic Adaptation",
+    "HC-GMP": "Hard-Center Generalized Max Pooling",
+    "PRR": "Progressive Retrieval Recovery"
+  },
   "record": {
     "dataset": "VOC2012 val (development)",
     "images": 1449,
@@ -14,51 +15,125 @@
       123,
       2026
     ],
-    "per_seed": {
-      "42": {
-        "baseline_mIoU": 0.8682171707587669,
-        "R3_mIoU": 0.8693365976634705,
-        "delta_pp": 0.11194269047035688
-      },
-      "123": {
-        "baseline_mIoU": 0.8632169216821646,
-        "R3_mIoU": 0.8641349580869414,
-        "delta_pp": 0.09180364047768341
-      },
-      "2026": {
-        "baseline_mIoU": 0.8637458319130259,
-        "R3_mIoU": 0.8647497082234042,
-        "delta_pp": 0.10038763103783488
-      }
-    },
-    "baseline_mean_mIoU": 0.8650599747846525,
-    "R3_mean_mIoU": 0.8660737546579388,
-    "paired_gain": {
-      "mean_gain_pp": 0.10137798732862506,
-      "sample_std_pp": 0.010105985248301178,
-      "t95_interval_pp": [
-        0.07627332825798346,
-        0.12648264639926665
-      ],
-      "positive_seeds": 3,
-      "n": 3,
-      "limitation": "Three training seeds, small-sample t interval; inspected VOC development data"
-    },
-    "summary_sha256": "bd836079a0732da532e5a6c2ac565c3aced3f1e5702662d9575d804c5c7338f3",
-    "metrics_sha256": "253e13f99cfe28e2245f066b04bebd6d74df2992b19687dfa6ef60b2d804ba5d",
-    "per_class_sha256": "e725535f4a096d0a92650417c32a0537689a0eb16ce08dfe83b9e5a1f824a24a",
-    "scope": "Observed original R3 results, not a new GPU validation of this publication wrapper; no independent test claim."
+    "per_seed_mIoU_percent": [
+      87.18510366582714,
+      87.08809049448544,
+      87.03237153523482
+    ],
+    "mean_mIoU_percent": 87.10185523184913,
+    "sampleSD_pp": 0.07729085925797713,
+    "source_version": "small_mask_hcr_20261027_200000",
+    "arm": "C_area100",
+    "manifest_sha256": "7311538b46f35c40ff79641f57e0eae8f8db4a29c0f91d3302049b92127ddff3",
+    "binding": "deac45aa31d178600e55c58c54d56db1fc288f7199fea11bb61ec52363a50200",
+    "independent_audit_job": "3822332",
+    "scope": "Accepted historical three-seed development result; publication integration is not a new GPU accuracy run or independent test."
   },
   "validation": {
-    "CPU_job": "3750333",
-    "tests": 36,
-    "passed": 36,
-    "skipped": 0,
-    "slurm_state": "COMPLETED",
-    "exit_code": "0:0",
-    "new_GPU_quality_run": false
+    "recipe_id": "lsa_hcgmp_prr_v1",
+    "scope": "Source integration and CPU consistency only; no new full GPU quality run",
+    "runtime_source_digest_sha256": "091d492b959c90dd61428c64e1b60961111a6a3c9668bfa7bfc44f0d3d6bc01a",
+    "local": {
+      "tests": 82,
+      "passed": 82,
+      "skipped": 0
+    },
+    "cluster_unit_tests": {
+      "job_id": "3838150",
+      "tests": 89,
+      "passed": 89,
+      "skipped": 0,
+      "receipt_sha256": "4d53c245e6fc67080881f2c6ee042b1756ffa94473d3b7a0316a90fc866fdca3",
+      "job_outcome": "FAILED after all unit tests, before conversion: test driver mistakenly used acceptance_002 instead of existing acceptance_001"
+    },
+    "cluster_conversion": {
+      "job_id": "3838928",
+      "slurm_state": "COMPLETED",
+      "exit_code": "0:0",
+      "receipt_sha256": "807e3b4352374321170e45e529b2eaa0c086af91077f013c474e3831b7f692b2",
+      "seeds": [
+        42,
+        123,
+        2026
+      ],
+      "projection_rows_per_seed": 1024,
+      "projection_atol": 1e-06,
+      "projection_rtol": 1e-06,
+      "maxabs_per_seed": [
+        1.043081283569336e-07,
+        1.043081283569336e-07,
+        1.1175870895385742e-07
+      ],
+      "retained_members_per_seed": 36231,
+      "retained_ids_exact_all3": true,
+      "saved_mask_score_pixel_replays": [
+        {
+          "seed": 42,
+          "image": "2007_000033",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        },
+        {
+          "seed": 42,
+          "image": "2007_000042",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        },
+        {
+          "seed": 123,
+          "image": "2007_000033",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        },
+        {
+          "seed": 123,
+          "image": "2007_000042",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        },
+        {
+          "seed": 2026,
+          "image": "2007_000033",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        },
+        {
+          "seed": 2026,
+          "image": "2007_000042",
+          "pixel_exact": true,
+          "changed_pixels": 0
+        }
+      ]
+    },
+    "attempt_history": [
+      {
+        "job": "3838035",
+        "outcome": "CANCELLED",
+        "reason": "Isolated publication snapshot omitted test-only dependencies; no model conversion started"
+      },
+      {
+        "job": "3838150",
+        "outcome": "FAILED",
+        "reason": "89/89 tests passed; subsequent driver source acceptance path typo; no source model read before failure"
+      }
+    ],
+    "GT_read": false,
+    "new_training": false,
+    "new_SAM3_or_GMP": false,
+    "new_full_quality_evaluation": false,
+    "resources": {
+      "cluster_cpus": 6,
+      "memory_GiB": 24,
+      "allocated_V100s": 1,
+      "CUDA_VISIBLE_DEVICES": ""
+    }
   },
-  "scope": "GitHub source-only release; exact file bytes preserved via .gitattributes. External data, models, runtime artifacts and credentials excluded. Manifest itself excluded from files to avoid a circular hash.",
+  "historical_release": {
+    "commit": "634730200007670430d59976cb820bd161632e4d",
+    "manifest_path": "release_manifest.json",
+    "recipe_id": "r3_record_v1"
+  },
+  "scope": "Source and documents only; no data, models, caches, logs or credentials. Exact bytes via .gitattributes. This manifest excludes itself to avoid circular hashes.",
   "files": {
     ".env.example": {
       "bytes": 137,
@@ -73,16 +148,16 @@
       "sha256": "55ddd29812ca3ed412d1f29420062652480fd3c8ab23ccd59dfd76c29f5fde35"
     },
     "AGENTS.md": {
-      "bytes": 1373,
-      "sha256": "02bb0fe1d7f348abc00a3cb9f393e381b175af7982188b57479cec43a933ab10"
+      "bytes": 1512,
+      "sha256": "dc9faaa6db0c78e32b3f5d22d9f713d29d782191d358c79136e93b86765f92f9"
     },
     "PROJECT_STORAGE_MANUAL.md": {
-      "bytes": 199,
-      "sha256": "6d697011162a2da5a3ee094dc7a5b804b33fa389037b0556bd24e35e4d616dda"
+      "bytes": 203,
+      "sha256": "50c8a25dbe4531caaa4b16e163963f3654d6a49bcd783f2ad2783562f0e7d9b5"
     },
     "README.md": {
-      "bytes": 4151,
-      "sha256": "609c94c2a1c9bbe33d6f292626c010fb44cb696b12f6040f6fa9126318b07fe9"
+      "bytes": 5029,
+      "sha256": "ce5beaac679547025ab47534139a6a8048b565f0fb475128dd6c933fead97d1d"
     },
     "configs/cls_ade20k.txt": {
       "bytes": 1254,
@@ -101,32 +176,40 @@
       "sha256": "20b951be30c19d2c558164baee2b524dc8d5047736dd9380f78b4b373617f9fa"
     },
     "configs/config.py": {
-      "bytes": 18149,
-      "sha256": "a6e8acc4b2cb24b786dc9e0297f595ac4d7fb769bcdc77ed2d52bc45eed09b10"
+      "bytes": 18632,
+      "sha256": "9ac269a5d568adf3d6efa27e1bc6ab5bb929c4e2bf50367fab506e228e5a9695"
     },
     "configs/config_helpers.py": {
       "bytes": 2235,
       "sha256": "57e77a3017a76c06a8d8eb8c27b10a53d68b74c73251396e89061cb4b8e4a918"
     },
     "configs/experiment.py": {
-      "bytes": 5017,
-      "sha256": "b0028a88aa61aa7905c25dc52a42f2e938797a286e7a552b58e2f8971d5f682f"
+      "bytes": 5863,
+      "sha256": "3b889827141ee1e5ab8dd10c0d8cd4b155de2f6fc97e9fe2ab0643bc3c5fe049"
     },
     "configs/my_name.txt": {
       "bytes": 122,
       "sha256": "0ce2b3959a6c740d27d74cb70f2d3e64747c09efc674363302411dcbd2fc6f71"
+    },
+    "configs/recipes/lsa_hcgmp_prr_v1.json": {
+      "bytes": 2278,
+      "sha256": "21d3b8a02dbbed2eee408c31364118de31c811eb2c4783b7388235d9bbb05438"
     },
     "configs/recipes/r3_record_v1.json": {
       "bytes": 3618,
       "sha256": "6089f777caec8d4d364ae04b1df88fac367833de07014f127f99044e2398f07b"
     },
     "docs/MAINLINE.md": {
-      "bytes": 243,
-      "sha256": "7ab625e0e18aa7f13407e98dd9612affe26269c297fcaa7bd5b28820214cc31c"
+      "bytes": 395,
+      "sha256": "fa9788612efc24f3e523f9416fba6bb6c4aa25c87ed2208d6b0389d57f022cc7"
     },
     "docs/PROJECT_STORAGE_MANUAL.md": {
-      "bytes": 514480,
-      "sha256": "b29bbaf9f716d7d8608e97d57a2c676ddc02c960190a3753ec570339a8b40e09"
+      "bytes": 845209,
+      "sha256": "48923aeee566ed29b17613ce51817cbb6d22a70ca9ae610d49808721c66978c1"
+    },
+    "docs/lsa_hcgmp_prr_validation_20261029.json": {
+      "bytes": 2723,
+      "sha256": "458e1a94ad14dced4d85a7e02e5a22aef0712626988557a081e098ccd594acae"
     },
     "docs/mainline_validation.json": {
       "bytes": 1135,
@@ -181,8 +264,8 @@
       "sha256": "1bfd6195bd5c215cab676130ac422af9fdfc793169306847f3a60c7b773bfa22"
     },
     "run_inference.py": {
-      "bytes": 21643,
-      "sha256": "1704ea60e344b7217e28b8cbfa4d47f3e5a240daa26476c8cdf2872f3d15b1a2"
+      "bytes": 26678,
+      "sha256": "a30acd3502e9f3acc3d38b5181c65956ee6c25bffb8f3e7061d8c3d780bb9879"
     },
     "run_sam3_proposal_demo.py": {
       "bytes": 14079,
@@ -1028,6 +1111,10 @@
       "bytes": 6270,
       "sha256": "d0fa1aedadd0e5e971f4911cde4628fc05671f2e56ed733b85e464748e7ec500"
     },
+    "src/geometric_completion.py": {
+      "bytes": 15897,
+      "sha256": "b39356004019c50461bd655735bc763580dbfd84c6bd1c63dac8a649df969f34"
+    },
     "src/hard_center_gmp.py": {
       "bytes": 3850,
       "sha256": "e1ca9e23b5249fd62db6db5527f751b5cb9e66637e39e095019ff8e5b0ac3488"
@@ -1037,8 +1124,8 @@
       "sha256": "87d435b1184ac5c837075c810bbb08e87c9ba616282a7a706afaa11bad02f8b0"
     },
     "src/inference.py": {
-      "bytes": 26528,
-      "sha256": "450ad84c35ca6d9c8c2af5806ee6fa026ffde2a55c2dd32d44944c7f4df29770"
+      "bytes": 26922,
+      "sha256": "45971b769e16ecd167e156e2dfeb2736ab18be98ebeccb3031afef8200400e9d"
     },
     "src/mask_edge_repair.py": {
       "bytes": 2989,
@@ -1051,6 +1138,10 @@
     "src/mask_proposer_sam3_query.py": {
       "bytes": 5430,
       "sha256": "135e1ae4828e76979714f6662c378bcb10dc6bb51b002df08928b1d68a3c67cf"
+    },
+    "src/progressive_retrieval_recovery.py": {
+      "bytes": 3013,
+      "sha256": "4a92f30d7bc46cf6dd3e92ddce22a5bbc30edde37c5cf6ca41e3d8ba269cf133"
     },
     "src/proposal_cleanup.py": {
       "bytes": 5716,
@@ -1080,6 +1171,10 @@
       "bytes": 1769,
       "sha256": "506e72519f23d350f026b06b663907bb3ac0ba32e9cb3bfa8bf4d0062f4f3cdd"
     },
+    "src/semantic_bank_filter.py": {
+      "bytes": 4111,
+      "sha256": "7adb537397758f33be54b02ac1a2b6dc236d65d479b068d81051c4f90de90246"
+    },
     "src/semantic_rescue.py": {
       "bytes": 6936,
       "sha256": "5de57852b6d8feb174d40b3db3e74e959b8c8b9ce8b95dae1b3b52e28bab2165"
@@ -1091,6 +1186,10 @@
     "tests/test_bank_input_validation.py": {
       "bytes": 2701,
       "sha256": "3f7960165f0653d3128264bd5c3f68223aea4184ab01258c5b0f470a741c5b4a"
+    },
+    "tests/test_bank_postfilter_sweep.py": {
+      "bytes": 2650,
+      "sha256": "78a2e50f6757a7086688e79ebe9c9fa8ef3a4538576ee6a03c850febe63abd33"
     },
     "tests/test_bulk_active_proposals.py": {
       "bytes": 3478,
@@ -1196,6 +1295,10 @@
       "bytes": 6674,
       "sha256": "99a02e74ad03895716bc59586c032161cba402b6dec56f27a804c91bbf4f9011"
     },
+    "tests/test_experimental_r3_crossview_control.py": {
+      "bytes": 4458,
+      "sha256": "29e93bd81d2163ac19fe2422c1d885dff4f2789716ce0e810302ce826d87ea81"
+    },
     "tests/test_experimental_rescue_evidence.py": {
       "bytes": 3061,
       "sha256": "18727d44aa04baa543ad96cdbcae1c3adf1854797cd0d395c876f0cf243848fe"
@@ -1244,9 +1347,13 @@
       "bytes": 1525,
       "sha256": "b62429e8c8beed80c6618e0b4ac322c45f04fa24a4c3f032c6a3d7d228603c65"
     },
+    "tests/test_lsa_hcgmp_prr_mainline.py": {
+      "bytes": 4834,
+      "sha256": "976e089b5d226303b656ea3ae8e4308c5095759f60aebe37a202ddd07c7d067a"
+    },
     "tests/test_mainline_full.py": {
-      "bytes": 7439,
-      "sha256": "c6998d17775db38375d826fbb88351be24ae4bdfb89d3359030376ce69af50d6"
+      "bytes": 7514,
+      "sha256": "3ec895ffec9d254b63a6c2c97fc80258ae2792f1542123f673ae9449ffe8d1fc"
     },
     "tests/test_mainline_gmp.py": {
       "bytes": 3735,
@@ -1255,6 +1362,10 @@
     "tests/test_mainline_promotion.py": {
       "bytes": 5538,
       "sha256": "96dd2fb30ae0188247538c4ebf2e3beba21fc02ad8b8528d4c6229d0ce382afc"
+    },
+    "tests/test_mainline_prr_bridge.py": {
+      "bytes": 2429,
+      "sha256": "979923ee1184ff8ae7dd7721ae6903845e4dfaf8a2f98b899f40bc932df0b21b"
     },
     "tests/test_mask_proposers.py": {
       "bytes": 1160,
@@ -1291,6 +1402,10 @@
     "tests/test_pseudo_two_gpus.py": {
       "bytes": 2964,
       "sha256": "a043eb5b0918572e9d61b858952a3531a36cf09823d69e31abfa6a8dc41e0205"
+    },
+    "tests/test_r3_postfilter5_e.py": {
+      "bytes": 2640,
+      "sha256": "acc33194d5157804efc161df64507df3f4f1f83a1aafb3ef405237ae979cde97"
     },
     "tests/test_r3_record_release.py": {
       "bytes": 6580,
@@ -1332,6 +1447,10 @@
       "bytes": 5083,
       "sha256": "0e3d35516a51cbe68f4c5776721d020f4a2a860cd2540a7cc71017544429b61e"
     },
+    "tests/test_small_mask_hcr.py": {
+      "bytes": 6124,
+      "sha256": "b60a37016c45e459dbdb35b31ef24157ec2ce7eee265846e5483abe96d7cc0bf"
+    },
     "tests/test_smfa_clean_path.py": {
       "bytes": 3078,
       "sha256": "349e360101496a10886248281ae11f5fcc5e29173a6d1bc46770d054824f2975"
@@ -1355,6 +1474,14 @@
     "tools/activate_mainline.py": {
       "bytes": 6575,
       "sha256": "3f9b4985863c7de058ed999030056f1803f85cdc4e6ed855a8afdb1cca9c43eb"
+    },
+    "tools/bank_filter_placement_core.py": {
+      "bytes": 2191,
+      "sha256": "74c29a443ee648b221c9fde62e9ee73a31899f17d6f25736f4617add8b16fdbc"
+    },
+    "tools/bank_postfilter_sweep_core.py": {
+      "bytes": 2147,
+      "sha256": "0d8aea6d9d0126cf2856ac9045807bc055e4a70cd1c9d51628be99e57e8d7504"
     },
     "tools/clean_pseudo_labels.py": {
       "bytes": 2995,
@@ -1504,6 +1631,10 @@
       "bytes": 7899,
       "sha256": "b45e9757a01e8b5cd50621e1ab461e2467f58b9db70765565105e7db3d707bbe"
     },
+    "tools/export_lsa_mainline.py": {
+      "bytes": 4837,
+      "sha256": "1930caa4fe80627dc111af15291583f96b27fa5cfd63b3484087fad3b236c2b3"
+    },
     "tools/generate_ade20k_imagelevel_train_val.py": {
       "bytes": 3805,
       "sha256": "75a36759573dcb0c97830f416cebeae3149370f66d58a2ce620cf7b649973bcb"
@@ -1528,6 +1659,10 @@
       "bytes": 5482,
       "sha256": "0733e2cebeb472b609a5de044c7db6ec9ea8328f8c9ec94ec4f75e232a7b8216"
     },
+    "tools/mlp_projector_voc_core.py": {
+      "bytes": 1991,
+      "sha256": "466f9e5ae53d7f16cd89edfed1f0f17113ef11978ac61799c2134ad031ed29c4"
+    },
     "tools/oracle_guided_r.py": {
       "bytes": 32576,
       "sha256": "90dc80fe59ee7666be1b2217966fa24d624aa0cbe82000a6a5e9d9fdee974668"
@@ -1535,6 +1670,10 @@
     "tools/organize_storage.py": {
       "bytes": 5596,
       "sha256": "e33a38aae5c961c4a87db943460bd2ae5becf5a39ab6e296f8bdc8c5a58a2aa0"
+    },
+    "tools/postfilter_lsa_bank.py": {
+      "bytes": 611,
+      "sha256": "9152fedc216eaad59e1bcd3b5c7ee374f331b4d3758ed8957140d87251b621b0"
     },
     "tools/probe_sam3_resolution.py": {
       "bytes": 11053,
@@ -1576,17 +1715,29 @@
       "bytes": 9828,
       "sha256": "015ae98132e5875f84f2ad3b728dd1c8a75721751b06782d16b5148f36bedc69"
     },
+    "tools/r3_crossview_control_core.py": {
+      "bytes": 7247,
+      "sha256": "1c7556703aae05c07a229ca7c7e8fd00469c5e6e41ccafd8518cb75e3be7bbd4"
+    },
+    "tools/r3_crossview_core.py": {
+      "bytes": 10567,
+      "sha256": "a6edfb75766d07ef595c76ff255eae20b3216a5b6969110bf06e267536e1b01e"
+    },
+    "tools/r3_postfilter5_e_core.py": {
+      "bytes": 1761,
+      "sha256": "c5c6e6454df857f347739b9f644bf5251e3565539ea7e0d41044b75507d7a180"
+    },
     "tools/refine_proposals.py": {
       "bytes": 5362,
       "sha256": "c917d0cca7cf3718cce835cc27846836125d231bf154042c827228237d95f1d7"
     },
     "tools/run_mainline.py": {
-      "bytes": 5376,
-      "sha256": "f3a81bf844f7d45467f4d4f385922d4dae5c463d4f6e8096e788a0cd4e36a290"
+      "bytes": 6110,
+      "sha256": "ebccbe09e4f59a162a1653dc4ab21e45e554ed8085624c99efc07062ed021d43"
     },
     "tools/run_mainline_full.py": {
-      "bytes": 51233,
-      "sha256": "054fb916bb7a90c2eee956c1e7dab1d12d3cb57f0710887f69c9b2c51151bd42"
+      "bytes": 51860,
+      "sha256": "ed42ab73568558e2c401bed3e32b2b9acd2e9254079f064749c1f2e12bb7471d"
     },
     "tools/run_pipeline.py": {
       "bytes": 11182,
@@ -1607,6 +1758,10 @@
     "tools/run_span2016_full.py": {
       "bytes": 20449,
       "sha256": "45eabc95de97c417858aa098c482e896459f9ef86b8603bd7aca4f2a0042f62a"
+    },
+    "tools/small_mask_hcr_core.py": {
+      "bytes": 4895,
+      "sha256": "df3c0dbdcf34906a2d981b07559d21de625f82c9e3beab864f575cc611554bbc"
     },
     "tools/sweep_proposal_cleanup.py": {
       "bytes": 17284,

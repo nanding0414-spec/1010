@@ -1,4 +1,4 @@
-"""Fresh two-GPU presence1/edge/geometry labels -> GMP -> MLP2 -> strict HCR.
+"""Fresh two-GPU LSA + HC-GMP + PRR mainline (balanced/post5/area100).
 
 No historical experiment inputs. Immutable code snapshots, checked checkpoints,
 new stage attempts, and parent-only result email. Run --help for the interface.
@@ -185,9 +185,9 @@ def environment(manifest, code, gpu=None, **overrides):
                OVERRIDE_SAM3_USE_BF16='false', OVERRIDE_SAM3_RESOLUTION='1008',
                OVERRIDE_SAM3_FEATURE_SOURCE='trunk_fpn', OVERRIDE_SAM3_FEATURE_LEVEL='-1',
                OVERRIDE_SAM3_TOKEN_NORM='layernorm', OVERRIDE_SAM3_CONTEXT_SUBTRACT='0',
-               OVERRIDE_FEATURE_ADAPTER_CKPT='', OVERRIDE_MIN_MASK_AREA='300',
+               OVERRIDE_FEATURE_ADAPTER_CKPT='', OVERRIDE_MIN_MASK_AREA='100',
                OVERRIDE_BUILD_SPLIT_CONNECTED_COMPONENTS='true',
-               OVERRIDE_FILTER_FOREGROUND_DROP_RATIO='0.1', OVERRIDE_FILTER_BACKGROUND_DROP_RATIO='0',
+               OVERRIDE_FILTER_FOREGROUND_DROP_RATIO='0', OVERRIDE_FILTER_BACKGROUND_DROP_RATIO='0',
                OVERRIDE_INF_RETRIEVAL_MODE='balanced', OVERRIDE_INF_TOPK_NEIGH='25',
                OVERRIDE_INF_CLASS_TOPM='5', OVERRIDE_INF_RETRIEVAL_SEARCH_MULTIPLIER='2',
                OVERRIDE_INF_CENTROID_WEIGHT='0.2', OVERRIDE_INF_RETRIEVAL_MARGIN_THR='0',
@@ -449,6 +449,9 @@ def worker(job):
             build_images(job)
         elif job['operation'] == 'merge':
             merge_bank(job['cache'], job['ids'], job['signatures'], job['bank'])
+        elif job['operation'] == 'postfilter':
+            from src.semantic_bank_filter import export_filtered_bank
+            export_filtered_bank(job['source_bank'], job['target_bank'])
         elif job['operation'] == 'probe':
             probe(job)
         else:
@@ -703,7 +706,7 @@ def pipeline(launch, probe_only=False):
     bank = Path(launch.stage('merge', do_merge)['path'])
     def do_train(attempt):
         from project_utils.experiment import train_command
-        weights = weightsbase/'42'/attempt.name; mlp = mlpbase/'42'/attempt.name
+        weights = weightsbase/str(m['seed'])/attempt.name; mlp = mlpbase/str(m['seed'])/'unfiltered'/attempt.name
         command = train_command(bank, weights, mlp, dataset/'ImageSets/Segmentation/trainaug.txt', None, m['training'])
         launch.jobs('train', attempt, [dict(operation='script', script='tools/train_feature_adapter.py',
             argv=command[3:], gpu=m['gpus'][1])])
@@ -712,15 +715,21 @@ def pipeline(launch, probe_only=False):
             raise ValueError('Incomplete MLP2 training')
         return dict(weights=str(weights), bank=str(mlp), best_epoch=report['best_epoch']), [weights, mlp, attempt]
     trained = launch.stage('train', do_train)
+    def do_postfilter(attempt):
+        target = mlpbase/str(m['seed'])/'post05'/attempt.name
+        launch.jobs('postfilter', attempt, [dict(operation='postfilter',
+            source_bank=trained['bank'], target_bank=str(target))])
+        return dict(path=str(target)), [target, attempt]
+    filtered_bank = launch.stage('postfilter', do_postfilter)['path']
     def do_eval(attempt):
         jobs = []
         for index, gpu in enumerate(m['gpus']):
             out = attempt/f'gpu{gpu}'
             jobs.append(dict(operation='script', script='run_inference.py', gpu=gpu,
                 argv=['--strict-eval', '--eval-limit', '0', '--shard-count', '2', '--shard-index', str(index),
-                      '--rescue', '--rescue-raw-dir', str(raw), '--output-dir', str(out), '--results-json', str(out/'metrics.json')],
+                      '--rescue', '--prr', '--rescue-raw-dir', str(raw), '--output-dir', str(out), '--results-json', str(out/'metrics.json')],
                 overrides={'OVERRIDE_FEATURE_ADAPTER_CKPT': str(Path(trained['weights'])/'adapter.pt'),
-                           'OVERRIDE_INF_FEATURE_BANK_ROOT': trained['bank'], 'OVERRIDE_INF_LOAD_PROPOSALS': 'true',
+                           'OVERRIDE_INF_FEATURE_BANK_ROOT': filtered_bank, 'OVERRIDE_INF_LOAD_PROPOSALS': 'true',
                            'OVERRIDE_INF_PROPOSALS_DIR': str(clean),
                            **({'OVERRIDE_IMAGE_TOKEN_CACHE_DIR': str(imagefeatures/'val')} if m.get('save_image_features') else {})}))
         launch.jobs('eval', attempt, jobs)
@@ -747,7 +756,7 @@ def pipeline(launch, probe_only=False):
         train_count=len(m['train_ids']), pseudo_quality=pseudo_quality, best_epoch=trained['best_epoch'],
         region_statistics=read(bank/'meta/filter_report.json'), workers=launch.reports,
         raw_proposals=str(raw), clean_proposals=str(clean), raw_bank=str(bank),
-        mlp_bank=trained['bank'], weights=trained['weights'], historical_inputs=False,
+        mlp_bank=filtered_bank, unfiltered_mlp_bank=trained['bank'], weights=trained['weights'], historical_inputs=False,
         pseudo_extra_cli=m.get('pseudo_extra_cli',[]),
         full_image_features=str(imagefeatures) if m.get('save_image_features') else None)
     summary.update(recipe_id=m.get('recipe_id'),pseudo_labels=str(pseudo),
@@ -764,7 +773,7 @@ def parse_args(argv=None):
     parser.add_argument('--dataset-root', type=Path)
     parser.add_argument('--checkpoint', type=Path)
     parser.add_argument('--gpus', type=int, nargs=2, default=[0, 1])
-    parser.add_argument('--seed', type=int, choices=[42], default=42)
+    parser.add_argument('--seed', type=int, choices=[42,123,2026], default=42)
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--probe-only', action='store_true', help='Run both real GPU/short-pipeline checks, then stop before full generation')
     parser.add_argument('--resume', action='store_true')

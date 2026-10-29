@@ -1,8 +1,8 @@
-# ModuSeg SAM3 · presence=1＋边缘修复＋几何清理＋GMP2＋HCR 主线手册
+# LSA + HC-GMP + PRR · SAM3弱监督语义分割主线手册
 
-更新：2026-10-20。本文是本项目唯一维护手册；当前正式操作以第46节为准，第47节之后为独立实验与诊断，供应商SAM3的许可证、接口说明仍以 `sam3-main/` 为准。本次用户明确要求将最高记录R3配置及最新手册同步到GitHub，发布与复现入口见第84节；不自动部署到集群。
+更新：2026-10-29。本文是唯一项目操作与模块说明手册。**当前正式主线以第109节为准**：LSA＋HC-GMP＋PRR，balanced选模、MLP前不删/后删5%、分类面积100。用户本次明确授权接入主线并发布GitHub源码和文档。第46/84节及其它早期记录保留为历史，不覆盖本条当前操作。供应商SAM3许可证和接口说明仍以sam3-main为准。
 
-### 2026-10-10 当前独立从头实验项目
+### 历史：2026-10-10独立从头实验项目
 
 用户本次指定并已通过SSH确认的根目录为 `/data/home/zystu2025/nd/1010-main`，
 环境Python为 `/data/home/zystu2025/.conda/envs/moduseg_sam3/bin/python`。
@@ -11,7 +11,7 @@
 不使用旧缓存约定或历史模型作为输入。
 
 
-> 当前主线按用户要求采用第45节已验证的presence=1＋边缘修复＋逐类别几何清理：原图Active标签 → 冻结SAM3 → 单相位硬中心GMP（ρ=0.1）→ 两层MLP → 单库检索 → clean/raw提议与HCR。2026-10-13按用户要求将推理中心权重设为0.2；第48节seed42对照为86.8217%，原中心权重0.4基准为86.7350%，均为开发验证分数，尚未完成新配方三seed验证。当前正式操作以第46节为准。此前三seed均值86.4316%属于旧配方。1–45节保留历史操作和实验记录，旧代码/标签/库/权重/指标不改写。
+> 历史记录（2026-10-13；现行操作以第109节为准）：当时主线按用户要求采用第45节已验证的presence=1＋边缘修复＋逐类别几何清理：原图Active标签 → 冻结SAM3 → 单相位硬中心GMP（ρ=0.1）→ 两层MLP → 单库检索 → clean/raw提议与HCR。2026-10-13按用户要求将推理中心权重设为0.2；第48节seed42对照为86.8217%，原中心权重0.4基准为86.7350%，均为开发验证分数，尚未完成新配方三seed验证。当前正式操作以第46节为准。此前三seed均值86.4316%属于旧配方。1–45节保留历史操作和实验记录，旧代码/标签/库/权重/指标不改写。
 
 ### 历史服务器项目路径（2026-10-07 用户确认迁移）
 
@@ -4045,3 +4045,1403 @@ CLI仅为原worker的固定配方包装，不是全流程调度器。调用方�
 源码发布清单为 `release_manifest.json`，列出每个已发布文件的字节数和SHA（清单自身不列入以免循环依赖）。Git仅提交明确列出的代码/配方/测试/手册；忽略数据/模型/NPZ/通知凭据，提交前定向检查敏感字段。运行资料只留本地和集群对应目录，不自动ZIP、不修改生产/冻结快照。
 
 目标环境发布CPU回归已完成：Slurm debug作业3750333，c21507，COMPLETED 0:0、90秒；36项测试全部通过，无skip。该检查只使用隔离的187个源码/配置/测试文件及环境依赖，不解码GT、加载研究权重或重跑SAM3精度。Windows同配方18项中17通过、1项因无torch跳过，以目标环境完整36项通过为准。发布入口与底层原worker的验证范围已分开记录。
+
+## 85. R3 Cross-View Semantic Agreement：固定三seed跨视角一致性扩展（2026-10-20）
+
+用户附件明确授权实现并运行r3_crossview_agreement_v1；本轮零训练，不修改第84节正式R3三文件、原SAM3/MLP/库/GMP/center.2/HCR/提议/裁剪比例。版本r3_crossview_agreement_20261020_171000；计划与原始请求在experiments/plans/r3_crossview_agreement_v1，运行目录experiments/r3_crossview_agreement_v1、冻结源码hpc_launch_audits/该版本/code、新缓存storage/r3_crossview/该版本、日志logs/r3_crossview_agreement_v1。完整规约见plan.md与protocol.json。
+
+旧R3没有crop tokens，每图仅重放一次原80%中心裁剪前向，并同时通过只读hooks捕获该forward的trunk1024/stride14-FPN256，按原layernorm/分块L2/concat生成FP32[5184,1280]。同一前向内的native crop mask计算crop GMP，mapped mask仅对应原图GMP；所有proposal数组/分数/ID/顺序与旧缓存逐元素精确才接受。原图raw GMP只读复用旧签名缓存，三seed分别用自身原MLP及34880成员/10569背景单库，balanced K25/top5/search2/center.2明确传参。技术两图新缓存安全复用进入正式池，不能把探针当1449完成；不得额外重复crop encoder。
+
+A严格独立重放当前R3并逐图核历史像素，提交历史PNG原字节；B使用crop严格gate；C保留A原排序，仅增加crop同类/严格gate；D无条件完整保留A，再按.8min(score_o,score_c)+.2proposal排序/candidate_id平局，处理原A未接受且共同前景类的候选，两view score>=.90、margin>=.05、proposal>=.4、novel>=.1。Novel使用A和之前extra之后的实时背景，另记录固定A后的潜在novel。保存FP32值按Python float阈值语义，与原严格R3一致。不用prompt类当预测、不平均分数生成第三类、不改mask/阈值、不重训。
+
+固定链technical1GPU→extract4分片→predict3seed→primary CPU→条件shuffle3seed→finalize CPU。全部12×1449实际PNG与分数/owner/21类分数SHA提交，无GT分数区间/margin/21类agreement诊断先完成，才解码GT。报告三seed均值/样本SD/方向、21IoU、FP/FN/wrongFG、2000共享图片bootstrap（不代替seed方差）；重点原score[.90,.95)新增数量/质量/非可加mIoU反事实。precision_all分母含ignore且ignore不当正确，另报valid-only。最多20有益/20有害独立image/candidate八面板，GT仅最后一栏事后可视化，支持不足如实记录。
+
+只有D三seed均值严格>A才固定shuffle_seed42在共同候选ID顺序上置换crop完整joint rows，三个MLP seed共享同一双射，保留score/margin/class联合分布，普通随机置换允许自映射并记录个数；query和A不动，D-shuffle同规则。全部3×1449 shuffle PNG提交后单独评GT，不重复primary GT/bootstrap。无正均值写skipped_no_positive_mean_signal，固定停止，不自动adaptive/multiscale/score fusion/扫描/部署。
+
+本地16项纯NumPy策略/几何/诊断/Bootstrap测试已通过，另5项torch/真实接口契约须在目标环境完成，不能声称Windows全部21通过。目标technical还须真实两图候选逐元素精确、同前向tokens与原fusion tail精确、少量原图GMP对旧raw数值及三seed×两图A像素回归。首次四extract实际进程与首批缓存SHA/FP32/native几何有效后独立写startup_validation一次；job提交不等于正式1449验收。最终独立验收与controller verification区分，核源码/输入/完整产物SHA、A历史逐图矩阵、12或15组逐图求和和真实Slurm退出。只在必要最终验收流式读新crop tokens，不重扫12031旧token。
+
+每GPU一worker、仅Slurm研究；真实mmlsquota余量先满足40GiB缓存预算+5GiB保留，瞬时quota最多3次，不用df替代。失败保留attempt/具体日志，只取消自有未启动依赖；同版复用须源码/参数/输入/完整产物SHA全同且旧worker退出锁释放，源码修复新版本小probe。用户暂停取消立即停本批和监测，不自动恢复。新结果/小验收下载核SHA，不自动GitHub发布新实验，不打包，不排障邮件。实际manifest/binding/JobID及正式验收后补。
+
+第85节已唯一注册并提交：technical3752041、extract3752042 array0-3%4、predict3752043 array0-2%3、evaluate3752044 debug CPU、条件shuffle3752045 array0-2%3、finalize3752046。六个afterok任务均有JobID，不重复prepare/sbatch。manifest SHA`e35f72452327e2e2f1d7246aec458434465a877a20b12d9a7942d8f1ab69d88d`、binding`96b9d8092d6bb43a8d66e9001050710c6c3c9955f06a7f343f875c5092311d44`，audit/jobs.json为实际命令依据。shuffle/finalize原CPU请求被QOSMaxSubmitJobPerUserLimit明确拒绝且无ID，记录各resource_fallback_001后唯一v100g32配额/CUDA隐藏CPU后备，不是方法失败。
+
+technical3752041已COMPLETED0:0、202秒，21项目标契约无skip通过；真实两图2007_000033/2007_000042历史proposal及score逐元素精确，capture token对原feature fusion tail bitwise/maxabs0，原图GMP首候选对旧raw也bitwise/maxabs0，全部三seed×两图A像素精确。technical_report SHA`9f17b89c6be8b8469186854d26d8fe5c43474075e6ffd86c3d59bba75f214ef1`。这是技术回归，不是1449精度结果。两图cache按同binding复用，没有重复crop encoder。
+
+四个extract实际Slurm/proc命令、各卡唯一UUID和首批FP32[5184,1280]、native/mapped mask、raw_crop/raw_original身份及token内容SHA已通过独立启动验收。startup_validation status=passed、formal_start_reported=true，SHA`412ede3330ba8101b447898832f00abca9a3702cccf9dad9b8fb3e349af55772`，已下载核SHA并向用户通知，不重复。启动审计001曾因最后array child实际JobID等于array root而squeue显示全家多行RUNNING，仅返回NOT_READY、未写验收；002改用scontrol指定ArrayID_TaskID，旧001保留，未修改算法、冻结代码或重新提交任何作业。verify_completion_001.py已准备并上传audit外层，完成后仅运行一次必要独立审核。
+
+后台监测r3已通过工具创建，每15分钟检查本版本，正常阶段不通知；完整结果和独立验收归档后一次通知并删除。所有科学阶段及条件control已Slurm衔接，电脑离线不影响计算；监测不额外启动新实验。冻结正式R3文件和GitHub发布保持此前版本，当前新实验仅本地/HPC独立实现。
+
+本批13个计算child现均COMPLETED0:0，squeue为空，无本批锁或failure。三seed A/B/C/D各1449预测及条件D-shuffle各1449预测、primary和finalize均完成，A历史4347张像素及逐图矩阵精确。controller汇总D均值86.864528%、相对当前R3 A均值86.607375%提升+0.257153pp，三seed均正向；D-shuffle均值86.614286%，D相对shuffle +0.250242pp。此处为已完成计算的汇总，尚不能替代独立验收。已确认无旧audit ledger/guard/accept后唯一提交只读CPU审计3752323（debug2CPU8GiB），audit_job_001.json为依据；不得重复审计或重跑实验，待completion_acceptance_001.json后归档最终凭据。
+
+**最终独立验收已通过。** 审计3752323 COMPLETED0:0、729秒，completion_acceptance_001.json SHA`d02e727537b161665826ff1c5d60e024bd4f2153dc5e67b2c7790a637c4f4002`。13个科学计算child全部COMPLETED0:0；17388张primary PNG和4347张shuffle PNG、15组1449逐图矩阵求和、A全部历史PNG字节/逐图矩阵、CSV/指标/汇总及原模型库SHA均精确。一次流式核完1449份新crop token共35610554821字节，均FP32[5184,1280]，未重扫旧token、未解码GT或模型。正式计算整体Slurm墙钟3055秒（50分55秒，取最早start至最晚end，不累加并行），提取峰值5210.633MiB；新训练0次。
+
+最终三seed（42/123/2026）mIoU(%)：A=`86.933660/86.413496/86.474971`、B=`86.928481/86.414984/86.441859`、C=`86.872904/86.379555/86.478806`、D=`87.104514/86.788614/86.700457`、D-shuffle=`86.942550/86.419541/86.480767`。均值依次`86.607375/86.595108/86.577088/86.864528/86.614286`。D-A分别`+0.170854/+0.375118/+0.225486`pp，3/3正，均值`+0.257153`pp、配对差样本SD`0.105750`pp，D绝对mIoU样本SD`0.212457`pp；D比shuffle均值`+0.250242`pp且3/3同向。2000次共享配对图片bootstrap的三seed均值区间：D-A `[-0.079721,+0.635889]`pp，D-shuffle差反向为Real D−shuffle `[-0.088523,+0.630099]`pp；均跨0，不能把三seed同向或shuffle差当独立测试/统计显著性已证实。
+
+D每seed实际新增49/50/53个候选，平均前景FN减少264894.333像素，同时背景FP增加87031.333、前景错类增加17587.333；valid-only新增像素precision为63.6087%/81.0815%/65.7079%，含ignore分母口径为51.0974%/63.5578%/54.9038%。原score[.90,.95)实际新增46/46/48个，单独保留其实际owner像素的非可加反事实提升分别+0.168597/+0.374601/+0.237595pp。主要类IoU变化：sofa+1.665418、car+1.497007、pottedplant+1.496898、bus+1.082595、bottle+0.562226pp；chair−0.507647、table−0.407957pp，bicycle仅+0.001071、motorbike0。不能据此称已解决椅子/沙发混淆或细结构问题。两view均过匹配宽松置信门槛后，三seed灰区disagreed支持均为0，precision保留null；没有直接证明agreed比同条件disagreed更可靠，也没有单视角宽松门槛的匹配分割对照。固定shuffle支持真实对应有开发集信号，但不能把全部收益单独归因于top1 agreement。
+
+已下载55个小结果/验收/40张八面板图到`experiments/hpc_results/r3_crossview_agreement_20261020_171000/verified_20261020`，下载均核SHA；未下载token、模型或原数据。summary SHA`35848d919513f93f0ba681ec51f96556147da0741c243c012fb0285a3b8c753e`，metrics SHA`33d27d6b31a9b13a8e6896f34ca5f11b5913bc62d8b66f894fe6160f9b5b8b04`，per_class SHA`8238733340acd5413238f6a6a0dd30d4bbaae8d11a95fc8b1197b7c7632fb232`。独立analysis_report.md SHA`8bbaf9f9a2dd4946e532ff78ae696039696a7c25540d9cd01b2f9b4d3fb8fbfa`、download_verification.json SHA`c10ed0834a7688485c2a3a5933da78f974c97747def3848c39a6bdbd871a82d5`、local_archive_001.json SHA`d4401dd5192a1fb72bc912ff1da2aae854a666890926bb55d6adbb26bf1eaf8f`已小文件回传HPC结果目录并核SHA；分析未改正式指标，未重读GT或重做bootstrap。已抽查有益/有害首例八面板。固定批结束，不追加实验、扫描或部署，不自动发布GitHub/打包/排障邮件；正式R3仍按第84节版本，完成通知后删除r3监测。
+
+最终归档状态为`complete_verified_archived`。后台`r3`监测已通过工具删除（deleteStatus=deleted）；本批一次完成通知后不再自动唤醒或追加计算。
+
+## 86. R3 Cross-View Mechanism Control v1：单视角loose与实际预算匹配（2026-10-20）
+
+用户附件明确授权继续实现并运行本批机制对照，目的仅区分第85节D收益与单纯降低原视角门槛的关系。版本`r3_crossview_control_20261020_200000`，计划/原请求/规约在`experiments/plans/r3_crossview_mechanism_control_v1`，独立入口`tools/experimental_r3_crossview_control.py`，新run/log/audit/storage均使用该新版本目录。正式R3三文件、生产src/configs和第85节冻结代码/旧指标只读，不改主线、不自动发布。
+
+A/D引用已验收的6套旧参考；新增E/E_count/E_area各3seed共9套1449张PNG。只读消费原候选mapped masks、各seed自身已保存的original/crop完整21类检索分数、A/D PNG/owner及匹配模型/库签名，不训练、不重建库、不读token或解码模型、不重做SAM3。旧缓存缺失或SHA/身份不一致安全失败，不自动补生成。固定center.2、rho.1、K25/top5/search2、34880成员/10569BG、原HCR和proposal几何。
+
+E只使用原视角前景top1、proposal>=.4、original score>=.90、margin>=.05，排除A实际accepted；按FP32(.8*original score+.2*proposal)降序/image_id及candidate_id稳定平局。保存FP32按Python float阈值语义，依次只填A及之前extra后的实时background，新增>0且novel>=.10。全1449图每seed唯一全局候选顺序，其逐图内相对顺序与普通E相同。
+
+E_count取这个固定顺序中前49/50/53个**实际接受**（对应42/123/2026），不计因重叠而novel失败的eligible候选；耗尽不足直接报错保留attempt，不能静默缩小。E_area在相同实际接受序列的自然前缀中选择累计新增面积最接近318574/444479/540285的停止点，包含空前缀，完全平局选较短前缀；不组合搜索、不切最后mask、不用GT选点，报告实际面积差。D eligible必须为E eligible子集，另区分D/E actual ID集合差异，不能将遮盖引起的actual差异误判为语义子集失败。
+
+先核全部13041张新PNG/NPZ/owner及旧A/D引用SHA，写无GT预算、ID集合和prediction commitment，再解码GT评测。输出5方法15逻辑矩阵、21IoU/误差/三seed均值样本SD和配对方向，7个固定比较使用同一2000次image-ID paired bootstrap；保留其条件性，不代替训练seed波动。extra像素按同旧口径分correct FG/BG FP/wrong FG/ignore，给出效率指标、21×21 transfer及D减两matched control的差矩阵。重点7类及chair/table伤害是否为loose共性；GOOD>=.8、BAD<.5、MID其余，valid=0记unavailable，score/margin/21类分数余弦仅事后诊断，不产生Quality Gate。
+
+本地21项CPU测试通过，覆盖动态novel/真实count/面积prefix与平局/不可覆盖A/FP32 decimal语义等；这不是集群正式结果。计划CPU Slurm technical→predict三seed array→evaluate，technical另做2图×3seed真实缓存A/D精确和D规则回放、原模型库SHA。只有debug明确QOS无JobID拒绝才一次CUDA隐藏GPU资源配额后备，不重复已有提交。真实GPFS余>=5GiB，不df、不扫旧12031 token。失败先日志保留attempt，只取消自有未启动依赖；源码改动新版本小探针，用户暂停立即安全停本批/监测不自动恢复。
+
+完成后一次独立CPU audit核5个计算child退出0、全新PNG/NPZ/矩阵与CSV SHA、A/D旧逐图精确、extra transfer守恒、count精确和area最近前缀；不读GT/token或解码模型。小结果下载核SHA、更新本节并一次通知后停监测；不自动Quality Gate/Adaptive/MultiScale/阈值/新seed/训练/部署/GitHub/打包，邮件不排障。实际manifest/binding/JobID与首次集群验收后补，尚未提交时不得称后台已运行。
+
+本批已唯一注册并提交：technical`3753082`、predict`3753083` array0-2%3、evaluate`3753084`，全afterok衔接。manifest SHA`f216de3c99cbeb912fcbf8db0c2d0e63cc2b13bb3f78038f3a7bb6295f832ec9`、binding`4320873f6bb241346f9a2f3214a370db4890536873a8a09734ff611ee82a9af9`；实际命令以audit/jobs.json为准，已下载核SHA的registered_jobs_verified.json为`9434f0ce3a03be87b61013c5539acca4a95836b42caf7e949d0900c6e3aea2ce`。上传11个新文件/控制器均先对本地SHA精确核对后才注册，旧4个CPU基础模块按第85节冻结code SHA复制，无源码覆盖或token预扫。
+
+technical使用debug2CPU8GiB；predict/evaluate原debug请求均被QOSMaxSubmitJobPerUserLimit明确拒绝且无JobID，分别记录resource_fallback_001后唯一v100g32配额6CPU24GiB后备。后备占GPU资源配额但CUDA始终隐藏，科学计算仍是CPU，不能称零GPU资源分配；不是方法失败，不重提已有JobID。后台新机制监测已创建（automation_id=r3，上一轮同名监测此前已删除，本次为新prompt/新版本），正常推进不通知，完整验收归档后一次通知并删除。首次technical和真实三worker验收尚待完成时，不把提交/探针当正式9套结果。
+
+归因边界：D排序用min(两view score)，E排序用original score，gate也不同；即使D优于matched controls，也首先支持完整跨视角选择策略含有增量信息，不能单独把优势因果归给top1类别一致。全部D/E匹配预算来自无GT实际预测变化，后续GOOD/MID/BAD只作事后诊断。
+
+首次正式启动已验收：technical3753082 COMPLETED0:0、171秒，21集群CPU测试无skip通过，2张真实图×3seed的原A/D PNG/NPZ及D extras独立回放精确，原模型/库SHA不变。technical_report SHA`f623d820a69157a1ff8a69445574d64ea386f971fcdc0547d3950142a8fcbb49`，真实mmlsquota余235009359872字节，已小凭据下载核SHA。三个predict实际child为3753091/3753092/3753083，PID482160/482161/1447671；经scontrol指定ArrayID_TaskID和自有Slurm overlap核实际冻结入口/manifest/seed命令，首份原FP32 21类score缓存身份及SHA通过。startup_validation status=passed、formal_start_reported=true，SHA`30fc2c7db6f17fc30710409af88392f5ac9cdce8f6d9603f8d9e0abb3706563f`，已本地下载核SHA。
+
+首次验收仅处于loading_signed_inputs，当时三个新worker均在GPFS读取（D状态），尚无新PNG；不能把来源首缓存或技术probe当本批9套结果。依赖评测继续等待，正常读等待或排队不重提作业。r3监测prompt已更新为本版本真实JobID/签名、formal_start_reported=true及当前边界，不重复启动验收/技术检查/启动通知。后续完整验收归档及一次结果通知后删除此新监测。
+
+### 86.1 最终独立验收与机制结论
+
+独立审计3753472已COMPLETED0:0、21分49秒。completion_acceptance_001.json SHA`702461204e6cef624c685a4d8b606cc79503380af61858fac26e7cdf8b930040`，status=passed。5个科学计算child均COMPLETED0:0；13041张新PNG及对应NPZ/owner、15组1449逐图矩阵求和、A/D历史引用和逐图矩阵、CSV/SHA、extra transfer守恒、原模型与库SHA、E_count实际接受数、E_area最近自然前缀均核验通过；无本批lock/failure。验收没有解码GT、token或模型。所有新预测SHA提交先于本批GT读取，未重复GT或bootstrap。
+
+本批0次训练、0次SAM3前向、9套新预测和6套旧A/D参考。科学计算Slurm墙钟2782秒（46分22秒，最早start至最晚end，不累加并行）；只读独立审计1309秒另列，不混为科学计算时间。predict峰值CPU RSS为2132.398MiB，evaluate峰值526.332MiB。后备任务占GPU资源配额但CUDA隐藏，科学计算均在CPU。
+
+| 方法 | seed42 mIoU(%) | seed123 | seed2026 | 均值(%) | 相对A(pp) | 绝对mIoU样本SD(pp) |
+|---|---:|---:|---:|---:|---:|---:|
+| A | 86.933660 | 86.413496 | 86.474971 | 86.607375 | +0.000000 | 0.284237 |
+| D | 87.104514 | 86.788614 | 86.700457 | 86.864528 | +0.257153 | 0.212457 |
+| E | 87.183731 | 86.780938 | 86.681601 | 86.882090 | +0.274715 | 0.265908 |
+| E_count | 87.123516 | 86.641867 | 86.621612 | 86.795665 | +0.188289 | 0.284108 |
+| E_area | 87.141796 | 86.637758 | 86.731329 | 86.836961 | +0.229585 | 0.268109 |
+
+| 比较 | seed42差(pp) | seed123差 | seed2026差 | 均值差 | 正向seed | 配对差样本SD(pp) | 95%配对图片区间(pp) |
+|---|---:|---:|---:|---:|---:|---:|---|
+| D-A | +0.170854 | +0.375118 | +0.225486 | +0.257153 | 3/3 | 0.105750 | [-0.079721, +0.635889] |
+| E-A | +0.250071 | +0.367442 | +0.206630 | +0.274715 | 3/3 | 0.083190 | [-0.142747, +0.716378] |
+| E_count-A | +0.189856 | +0.228371 | +0.146641 | +0.188289 | 3/3 | 0.040888 | [-0.126032, +0.552377] |
+| E_area-A | +0.208136 | +0.224262 | +0.256358 | +0.229585 | 3/3 | 0.024548 | [-0.103085, +0.590571] |
+| D-E | -0.079217 | +0.007676 | +0.018855 | -0.017562 | 2/3 | 0.053687 | [-0.150011, +0.103406] |
+| D-E_count | -0.019002 | +0.146747 | +0.078845 | +0.068863 | 2/3 | 0.083324 | [-0.097764, +0.263055] |
+| D-E_area | -0.037282 | +0.150856 | -0.030872 | +0.027568 | 1/3 | 0.106819 | [-0.102266, +0.150525] |
+
+**机制结论：原视角门槛放宽已足以复现之前整体提升的量级；跨视角策略的稳定额外mIoU优势尚未建立。** E均值高于D 0.017562pp；D相对两个matched controls仅+0.068863/+0.027568pp，分别2/3、1/3 seed正向，区间均跨0。D与E同时改变gate和排序，不能隔离top1 agreement的因果贡献，也不能将mIoU差拆成可加的“阈值贡献比例”。2000次共享image-ID bootstrap只描述固定模型在已查看VOC开发图片下的条件波动，不替代training-seed方差或独立test。
+
+E_count实际接受数严格49/50/53，与D一致，但新增面积306947/427045/429379，对D差−11627/−17434/−110906。E_area实际前缀51/52/58个、面积323296/433165/557076，对D面积差+4722/−11314/+16791；这些是无GT、包含空前缀且平局取较短的最近自然停止点，不能写成完全等面积。完整E实际接受61/66/61个、面积513974/689458/578105。D semantic eligible为E eligible子集；actual集合交并差另外保存在candidate_sets.json，避免将不同排序遮盖误判为语义子集失败。
+
+新增像素valid precision三seed等权均值：D70.1327%、E66.3209%、E_count61.3978%、E_area64.5784%；含ignore分母的precision_all依次56.5197/53.7920/47.0536/50.8601%。D有较保守的选择迹象，但不是每seed都更好。D对E平均BG FP少55703.667、前景错类少1115.667，同时FG FN多73066；相对E_count则BG FP少9816.667、FN少65263、错类少1048.333；相对E_area BG FP少16541.667、FN少22579.667、错类少1048.333。FG FN是前景被判背景的口径，新增错误FG也可减少此FN，须与正确FG及错类分开看。Net valid benefit仅诊断，不替代mIoU。
+
+| 重点类 | D-A IoU差(pp) | E-A | E_count-A | E_area-A |
+|---|---:|---:|---:|---:|
+| sofa | +1.665418 | +2.319861 | -0.045970 | +0.751848 |
+| car | +1.497007 | +1.576820 | +1.576849 | +1.576767 |
+| pottedplant | +1.496898 | +0.598590 | +1.859589 | +1.717266 |
+| bus | +1.082595 | +1.082595 | +1.082595 | +1.082595 |
+| bottle | +0.562226 | +0.562226 | +0.365847 | +0.565194 |
+| chair | -0.507647 | -0.642730 | -0.442882 | -0.442882 |
+| table | -0.407957 | -0.407957 | -0.389515 | -0.395702 |
+
+D对matched controls的优势集中于sofa：该类D−E_count为+1.711388pp、D−E_area为+0.913570pp。去掉最大正向类sofa后的其余20类IoU差均值为−0.013263/−0.016733pp。这是已保存逐类IoU的事后贡献诊断，不改官方21类指标、不重读GT、不筛候选，不能称普适改善。chair/table在全部loose control均下降；D对matched controls也没有保护这两类。
+
+D新增正确FG最大三seed平均转移为sofa→sofa 79445.333、car→car 56330.333、bus→bus 47899像素。主要错误转移为background→table 28883.333、background→pottedplant 25248.667、background→chair 18331.333、sofa→chair 16945.667。完整21×21及D减matched差矩阵见extra_pixel_transfer_*.csv，ignore单列；不能把此前已有前景的错误说成已被背景填充修正。
+
+D实际接受候选三seed合计152条，GOOD51、MID1、BAD85、无valid支持15。同一候选可跨seed重复，不是152个独立训练/图像重复。GOOD/BAD原score均值0.939442/0.932772、crop score0.947112/0.944862、21类score余弦0.971279/0.973091；只是条件于已接受候选的事后描述，不能据此反向设阈值或声称简单quality gate已验证。
+
+已下载并逐SHA核24份小结果/CSV/bootstrap/独立验收到`experiments/hpc_results/r3_crossview_control_20261020_200000/verified_20261020`；不下载token、权重或大量PNG。summary SHA`cadd919962f42f0e079318c764fa4f25e9fba27d5cb0a7fc7f518c57ebdc66a9`，metrics SHA`3143485c7a73199225ce256cb42a7ad886fa7bf7bda72bccb71156c1c9e07a40`。独立`analysis_report.md`进一步列出类贡献、最大转移和质量分组；本地分析入口`experiments/plans/r3_crossview_mechanism_control_v1/analyze_downloaded.py`，小分析回传入口`archive_results_001.py`，均在冻结科学snapshot外，不重算实验或覆盖正式指标。回传核SHA及监测退役凭据在本节末追加。
+
+第86节最终归档状态为`complete_verified_archived`。analysis_report.md SHA`a9fff66dff7f995b827718c88fff42f76878bf55fd12c138114837268395b068`、download_verification.json SHA`4689edeea6f301e538a9a01b7cce5eb2c088593bf2909049ec021b13541b31c2`、local_archive_001.json SHA`d07a31f51f1b281cc5014c4c510bba7f26043893f88fc9754cadfca6ffe72706`已回传本批HPC结果目录并逐项核SHA。报告只分析已保存的小指标和CSV，没有重读GT、token或模型，没有重做推理或bootstrap。
+
+后台`r3`监测已通过automation_update工具删除（deleteStatus=deleted）。固定机制批在一次最终通知后结束，不自动追加Quality Gate、Adaptive/Object-Centric/MultiScale、扫描、训练、部署、GitHub发布或打包；用户已说明邮件不重要，未做邮件排障。原正式R3配方及旧结果保持原版本。
+
+
+## 87. Retrieval-Guided Adaptive Re-observation v1（2026-10-21）
+
+用户附件明确授权实现并运行固定RGR-v1批次。版本`rgr_adaptive_reobservation_20261020_215500`；设计标签保留最初实现时间，实际提交时间以Slurm ledger为准。独立入口`tools/experimental_rgr_adaptive.py`，协议/原请求/操作脚本在`experiments/plans/rgr_adaptive_reobservation_v1/`。当前本地38项CPU测试通过；截至本条写入时尚未上传/注册/提交新任务，不能据此声称真实SAM3或精度通过。
+
+E只读复用第86节独立验收结果，三seed42/123/2026分别87.183731/86.780938/86.681601%，均值86.882090%。F=E后按original full-image raw候选检索选最多2个object-centric crop；G逐图逐seed逐rank匹配F的crop数量/宽/高，仅SHA→PCG64位置不同。seed固定FG、retrieval>=.90、margin>=.05、.15<=proposal<.40、相对E novel>=.10，按retrieval-proposal gap、margin、retrieval、原ID排序，source mask IoU>.5去重。bbox扩1.5、最小宽高比例.30、碰边平移保尺寸、整图crop跳过后继续。随机位置函数不读取F中心/bbox/类别/GT；偶然相同位置不重抽。
+
+每crop只运行一次冻结SAM3 encoder和完整20类/五桶，1008 FP32、原context expansion、正常预测presence；原R3实际映射后area/NMS/hash/per-source-class-cap参数不改。crop只生成几何，不用crop token作语义分类。mapped新mask统一用原图签名72×72×1280 FP32 token→原hard-center GMP rho=.1→对应seed原MLP→34880成员/10569BG原单库，balanced K25/top5/search2/显式center=.2。新候选按E式proposal>=.4/retrieval>=.9/margin>=.05、FP32(.8retrieval+.2proposal)/ID，eligible-only hash及semantic-class NMS.7后实时novel>=.1，只填E背景。E已有FG不可改。0训练/0新库/0伪标签/0原图SAM3前向；新增F/G共6套1449 PNG，上界17388次crop forward，实际按无GT计划确定，技术crop完整缓存同binding正式复用，不额外造probe crop。
+
+集群运行目录`experiments/rgr_adaptive_reobservation_v1`；提议/原图查询缓存`storage/proposals/voc/rgr_adaptive_reobservation_v1/版本`；日志`logs/rgr_adaptive_reobservation_v1/版本/%A_%a.out`；冻结snapshot及真实ledger为`experiments/hpc_launch_audits/版本/{code,jobs.json}`。依赖链输入technical单GPU→inventory四GPU按图片分片→实际计划crop technical单GPU→observe四GPU每worker处理独立三seed→CPU evaluate。研究计算仅Slurm，每GPU一worker，真实mmlsquota余>=5GiB。CPU debug仅明确QOS且无JobID拒绝时唯一GPU配额/CUDA隐藏后备；绝不重复prepare/sbatch。原正式R3三个文件记录保护SHA，不修改生产或旧实验。
+
+F/G全部8694新PNG、owner/NPZ、E引用、无GT seed/crop预算/trace核SHA提交后才读取GT；9逻辑矩阵逐图求和，E像素/每图矩阵精确历史。输出21IoU、FP/FN/wrongFG、三seed均值样本SD/配对方向、2000共享image bootstrap F-E/G-E/F-G、yield/像素precision/每forward正确与净收益、21×21transfer及ignore、gap三分位实际owner非可加反事实、F-G去最大正向类敏感性、随机30/有益20/有害20多面板（不足如实记缺；GT最后栏）。GT只事后，不改seed/位置/阈值/预算。F-G只检验在F触发图片/数量/尺度给定条件下的位置选择；gap不是共尺度概率差；图片区间不是seed方差或独立test证据。
+
+结束须唯一独立Slurm审核`verify_completion_001.py`，核源码/模型库字节SHA、6套新PNG、9矩阵/CSV、F/G每对预算、owner/transfer、11个科学child均COMPLETED0:0，不读取GT/token或重算方法。controller verification不冒充independent acceptance。只下载小结果和必要可视化核SHA，更新本节；固定批完成即停，无自动扫描/新crop/新seed/训练/部署/GitHub发布/打包。邮件不排障。
+
+
+### 87.1 实际注册与调度（2026-10-21 北京时间01:47起）
+
+manifest SHA=`83964b728cb108411316446047ff9837e8993da071234f691642e40aa1a4c847`；binding=`cedf4a09e52bc56cb2bc3d4f53d887d8f5eeab8971765285ad2d9d8266ac2f8c`。真实`audit/jobs.json`已登记：technical_inputs3755242、inventory3755243 array0-3%4、technical3755244、observe3755245 array0-3%4、evaluate3755249（debug8CPU23000M/2h），全afterok。不要再upload/prepare/sbatch。首次CPU4h请求明确time limit拒绝且无JobID，读`MaxTime=02:00:00`后仅外层`submit_evaluate_resource_recovery_001.py`修资源时间并成功提交；`jobs_before_evaluate_recovery_001.json`、`controller_failure_001.json`及`evaluate_resource_recovery_001.json`保留，不属于科研方法失败，冻结code/manifest未改。
+
+上传末尾校验首次因Windows反斜杠拼入Linux路径而失败，所有14个新文件已经实际上传；仅修本地校验路径为POSIX并核SHA，不重复上传。注册前另核发现HPC主目录三个正式R3入口均不存在（此前发布与服务器部署分界），故`pre_registration_recovery_001.json`记录源码注册前修正：保护已有路径SHA并记录原先缺失路径，不在HPC部署生产入口；保留before副本，无JobID/算法规则变更。注册后当前code冻结。
+
+本节最后检查时technical_inputs为RUNNING，真实节点c2v100m2-19，其余依赖等待；这只是技术阶段，不是正式crop验收或1449评测结果。还须核目标38项测试/真实原raw GMP与三seed E回归、inventory后实际计划F/G crop探针、四observe worker实际Slurm/proc/GPU和首产物SHA后，唯一执行startup验收并通知。后续正常推进静默，最终完成/失败/需操作才通知。
+
+
+### 87.2 当前有效恢复版（2026-10-21 北京时间01:55）
+
+初版3755242在38目标CPU测试通过后，原分类器import阶段因快照遗漏`project_utils`依赖FAILED；未产生新SAM3 forward、crop、预测或GT评测。其余初版3755243/44/45/49均由自有失败处理取消、0秒，旧snapshot/manifest/attempt/failure保留，不是方法质量负结果。禁止重启初版。恢复版从已验收旧source按SHA补齐`project_utils/`和`configs/`依赖（218签名源文件），不改旧snapshot/生产，科学core和固定参数不变；本地canonical方案已指向新版本，旧本地控制文件保存在plan/history/初版目录。
+
+当前有效版本=`rgr_adaptive_runtime_recover_20261021_015500`，run=`experiments/rgr_adaptive_reobservation_v1/该版本`，storage/log/audit均用该新版本。manifest SHA=`583a36ac7ee303adcfcbf1de6b26f7f5b537438bf10961463d47237747181109`，binding=`06dab8108ab6a130c788769f47c0ed15508103e6b4f446e428fbd30a36a0b44f`。audit/jobs.json：technical_inputs3755271、inventory3755272 array0-3%4、technical3755273、observe3755274 array0-3%4、evaluate3755275 debug8CPU23000M/2h，五任务全成功提交afterok，不重复prepare/upload/sbatch。所有控制session已返回；还需等待本恢复版真实技术和四worker正式启动验收，不把旧38项CPU或资源提交当SAM3质量。
+
+本恢复版38项本地测试仍通过，原图raw/GMP/E的针对GPU探针会完整运行，crop technical仅用本批实际已计划crop缓存，F/G预算和0训练等边界均不变。后台rgr监测继续本固定批，正常排队推进静默，正式startup/完成/失败或需行动才通知。最终独立审计与下载脚本已同步指向恢复版，需按其manifest/ledger核11科学child，不套初版签名或JobID。
+
+
+恢复版输入technical3755271已COMPLETED0:0、56秒；report SHA=`7a30353b48baa89af8908691d793cbdcca3b656e9eb557c24ae29e1768265928`。38目标CPU测试无skip，真实两图2007_000033/2007_000042×三seed E PNG/NPZ及独立规则重放全像素精确；签名原图token上的GMP重算maxabs分别8.940696716308594e-8/0，第一图非bitwise、第二图bitwise，不能声称全体重算逐元素一致。原raw查询FP32有效；无GT/新训练/原图SAM3，峰值90.4995MiB，真实mmlsquota余234102996992字节。报告已下载核SHA，本地launch_receipts/恢复版/input_technical_verified_001.json SHA=`8b2a6806ee0d38f6b3350c203dfcf54e739ceba9771c84a1ee56f9a6e177843f`。inventory已至少三个child真实RUNNING，另一个等资源；这里只是输入探针/计划阶段，尚未完成新crop SAM3 probe、startup正式四worker验收或F/G1449精度。
+
+
+### 87.3 六套预测完成；评测诊断修复版（2026-10-21 北京时间10:31，当前优先）
+
+恢复版的10个GPU child均COMPLETED0:0：输入probe56秒，inventory四child11分07/15分05/15分26/11分23秒，真实crop technical9分33秒，observe四child44分22/43分25/38分10/45分04秒；新增六套共8694 PNG/NPZ/owner已完整生成。实际每arm crop数seed42/123/2026为611/634/625，F/G逐图逐rank次数与宽高一致，共3740次crop encoder（技术计划crop缓存正式复用，未另加forward），不是上界17388全部运行。源all_predictions_committed SHA=`8153c74a724084d7e5502c00e7da5fdac3baccd21075093dc34c8282943a1532`，在首次GT前完成签名提交。
+
+原evaluate3755275 FAILED1:0、30分20秒：无GT提交核验已完成，进入首图2007_000033、seed42的F gap诊断时，comprehension错误把`if`写成`and`，触发`NameError: name r is not defined`。旧完整metrics/bootstrap尚未产出；之后取消检查对已过保留期squeue ID的二次异常只掩盖stdout尾部，原failure.json保留真正NameError。此为我写的评测诊断实现错误，不是F/G质量结论。四observe已完成，不重跑GPU/SAM3/GMP/检索或生成预测。原source snapshot/manifest、partial attempt/失败记录、原预测及所有crop缓存保持原样。
+
+已按完成worker分支对源技术报告、Slurm历史、单GPU UUID、首份FP32源query/三个21类score、六PNG/NPZ背景保护及首crop原tokenSHA回顾验收；source startup_validation SHA=`0c3048522eb3c43be5aac2c5b76a98ab5f1f73304711adebb07392235e8b37d2`，并不声称本回合观察过存活/proc。真实crop report SHA=`a7d1db1ca139cff671b920fdbd6685944b0d877ffad6e5a9de40406662ad31fd`。
+
+新建仅CPU评测版本`rgr_adaptive_evaluation_recover_20261021_102500`，run=`experiments/rgr_adaptive_reobservation_v1/该版本`，audit/log同版本。manifest SHA=`372888fe7bbbcc7f615abd34eca1ccfd7e810872cc3c8f121b64f6c953f5933f`，binding=`b35de4a1810586f98225a3801907e2c1d13d3ed9337243a42265ccd6e63244be`。唯一evaluate3757199（debug8CPU23000M/2h、CUDA隐藏）已提交并RUNNING，不能重复setup/submit。新snapshot按源code_records逐SHA复制，新增独立`tools/rgr_adaptive_evaluation_recovery.py`及`experimental_rgr_evaluation_recovery.py`；分组修为测试过的逐row selector，明确验证旧prediction binding和新evaluation binding，旧科学源码不改。输入masks/boxes/规则/成员/模型库/图片顺序与source逐项相同，input source_manifest和旧commit/失败/原GT输入metadata及Slurm账本均锚定SHA，不绕过签名。
+
+当前控制入口为绝对Python调用`experiments/plans/rgr_adaptive_reobservation_v1/evaluation_recovery_control.py inspect/audit/audit-status/download/sync-manual`。禁止再调用旧local_control的upload/submit或启动旧GPU链。新CPU作业先通过44目标测试（原38+6个非空/空分组、缺失binding和owner分组回归，无skip）及真实已保存两图×三seed F/G PNG/NPZ/owner/E保护探针，无GT/模型/token解码、新SAM3或新预测为0，probe SHA=`4a86ba091bce824e9dbe7154e3e472f401b75fdcd6e5bd7d97c758df59022221`；真实quota余233826697216字节。之后正在重新核本批已提交产物SHA并完成首次完整GT/指标/bootstrap评测。旧首图GT已部分解码且未保存中间矩阵，完整恢复pass会再解码该一图；已在新manifest/summary明确披露，不能声称全历史只有一次GT decode。未用该图调整任何方法参数/候选/预算，旧bootstrap未运行，不存在复用不完整数字或选择性重算。
+
+本地恢复launch凭据在plan/launch_receipts/评测恢复版/recovery_launch_001.json，SHA=`800efe6c8b8307c9ce291ac36a7039de248dde0574c1d8398314809f67267bea`。最终独立审核脚本`verify_evaluation_completion_001.py`已上传新audit外层为verify_completion_001.py，仅在eval complete且无audit_job/guard/accept时新控制器audit唯一提交。核10个成功源GPU child+1个成功新CPU child、九逻辑矩阵、六套预测/所有原crop/SHA/CSV/owner/transfer，并另列原3755275 FAILED及failure SHA，不将其伪造成成功；不读GT/旧token/模型或重算方法。source_prediction_acceptance_001为读入完成产物证明，不冒充本回合新活worker。下载控制器只取30小文件+必要图到新版本verified_20261021并逐SHA。固定三seed批验收归档/一次完成通知后删除rgr，不额外实验。
+
+
+### 87.4 完整数值已完成；仅报告与图示恢复（2026-10-21 北京时间11:10，当前优先）
+
+CPU评测3757199已FAILED1:0、21分32秒，但在失败前完整处理1449/1449图，九组逐图矩阵、25项数值/CSV/2000次共享图片bootstrap均已保存。失败发生在后续visualizer调用source_entry时，误将新evaluation输出binding用于原prediction source inventory，触发ValueError: Source inventory identity differs。这是报告路径的实现错误，不是预测/数值失败。旧attempt/failure、全部25项完整统计及原snapshot保留，不能重跑全GT指标、bootstrap、GPU预测或SAM3。
+
+新增独立报告版rgr_adaptive_report_recover_20261021_110000。控制器experiments/plans/rgr_adaptive_reobservation_v1/reporting_recovery_control.py，入口tools/experimental_rgr_reporting_recovery.py。源235个文件按SHA拷贝不改，新增CPU报告/visualizer/summary/针对测试；数值25文件逐字节SHA导入，JSON保留原统计binding并显式标注statistics_source_binding。指标JSON仅由已保存矩阵求和核对CSV点估计，不重新解码GT作指标或重采样。先写独立numeric_report_001保存数值，再画图，避免图示故障损坏数值收尾。
+
+新visualizer严格以原prediction source context加载inventory，没有关闭或绕过签名。只对预先按保存结果固定的30随机/20有益/20有害案例中的唯一图片重新读取GT以绘最后一栏；像素precision注释来自已保存trace计数，不重新评分。须披露原第一次部分首图GT读取、随后完整1449统计pass以及这次少量visual-only读取，不能称全历史仅一次GT decode。47本地目标测试通过；集群须相同47项无skip及真实两份source绑定、九组矩阵/252逐类CSV和原bootstrap字节核对通过，才称报告路径验收。
+
+截至本段写入报告快照正在准备，尚无新JobID；实际manifest/binding/JobID随后补。独立审核将核10成功源GPU与唯一新CPU报告成功，单列原3755275诊断失败、3757199完成数值后图示失败；两失败不能冒充成功。审核不读GT/token/模型、不重算方法或bootstrap。原完整指标的质量结论待独立验收，小结果和必要图归档后一次结果通知并删除rgr；固定批不追加实验。
+
+报告版已唯一提交CPU3757473，debug8CPU23000M/2h、CUDA隐藏，无GPU资源后备。manifest SHA=`48709ac24f57ff23898e93bd509d627f026409ee22f23662d84ca1d9b968c5c0`，binding=`0615b3820f297a152c65d160af2f0f9e6a8adb6640bdab9b265d80f5c46f3eae`；audit/jobs.json为准。setup已核源235文件克隆及6新文件SHA，不重复setup/submit。只待报告完成与独立审计，不重跑数值评测或任何预测。
+
+3757473的真实CPU报告探针现已passed：47目标测试无skip，原prediction source binding两份真实inventory加载通过，九组保存矩阵/252逐类CSV及method/bootstrap点估计精确，25导入文件和bootstrap字节不变；无GT/model/token decode、新预测或SAM3。reporting_recovery_probe_001 SHA=`a226a23a6f369a54c026cd55fed1b9a0c6cbafbe370bd921250fc9ea7716e32b`，真实quota余233756540928字节。作业仍RUNNING、无failure，正在后续图示/报告，尚无独立accept。
+
+报告3757473现已COMPLETED0:0、2分05秒，70张真实12面板图示及完整summary/metrics均已保存，无报告failure。数值25源文件/2000 bootstrap逐字节导入，未重跑GT指标/SAM3/预测。已确认无旧audit/guard/accept后，唯一独立只读CPU审核3757498（debug4CPU10GiB/2h）已提交，audit_job_001.json存在；禁止重复audit/verify，先audit-status等这一作业。独立accept尚未产生时不把controller checks当最终验收。
+
+
+**最终数值与独立验收（2026-10-21，北京时间11:37核实）：** 3757498 COMPLETED0:0、13分58秒；independent completion_acceptance_001 SHA=`e4475334240660e1d82c15d8a8bf2ef7f5cee481a396f1ba0bb529447bb794da`。10成功源GPU child和新CPU报告3757473均COMPLETED0:0；原3755275、3757199的FAILED状态/失败SHA分别保留，不伪装成功。全部8694新PNG、crop查询/FP32/native映射、owner/E前景保护、F/G预算、模型库字节SHA、九矩阵求和/E历史逐图、25份数值来源字节/CSV/2000bootstrap均通过。独立审核没有读取GT、原token或模型tensor，也未重做推理、GMP、检索、指标或bootstrap。
+
+| 方法 mIoU(%) | seed42 | seed123 | seed2026 | 均值 | 样本SD(pp) |
+|---|---:|---:|---:|---:|---:|
+| E 原 single-view loose | 87.183731 | 86.780938 | 86.681601 | 86.882090 | 0.265908 |
+| F 检索引导位置 | 87.182551 | 86.786650 | 86.720767 | 86.896656 | 0.249774 |
+| G 同预算随机位置 | 87.196738 | 86.819238 | 86.749745 | 86.921907 | 0.240533 |
+
+E不是最初严格R3 A，不能混用基线。F−E各seed为−0.001180/+0.005711/+0.039166pp，均值+0.014566pp、2/3正，配对样本SD0.021581pp；G−E均值+0.039817pp、3/3正，配对SD0.027600pp；F−G为−0.014187/−0.032589/−0.028978pp，均值−0.025251pp、0/3正，配对SD0.009751pp。共享2000图片bootstrap三seed均值95%区间：F−E [−0.063013,+0.098539]、G−E [−0.008653,+0.097741]、F−G [−0.091957,+0.045332]pp，均跨0。这不是独立test或seed方差替代，不能说随机G显著优于F；当前固定方案没有验证出guided位置优势，也没有实质稳定提升E。
+
+F−E三seed等权平均BG FP+85406、FG FN−83779、wrongFG+11447.667像素；G−E为+31137/−50507/+1543。F−G多54269背景FP、少33272背景-only FN、但多9904.667前景错类；FN下降包括错误FG，不能全当正确恢复。F平均正确FG新增72331.333，对G48964，但平均net valid benefit为−24522.333，对G+16284（诊断口径不替代mIoU）。新增valid precision三seed等权均值F42.7641%、G60.0994%；包含ignore分母且不当正确的precision_all为32.7339%/47.7599%。F三个seed分别valid precision41.3290/40.4914/46.4720%，G54.6056/56.2797/69.4129%。
+
+F productive crop rate25.3682/23.6593/24.6400%，G10.9656/10.4101/11.5200%；该比率只代表有候选被接受，不是GT正确率。F正确FG/forward114.354/108.737/125.096，高于G60.931/88.052/86.141，但F net valid/forward−47.984/−51.069/−18.994，对G+10.278/+19.650/+48.182。引导位置产生更多接受和正确FG的同时也引入更多错误，不能将高yield独立当成定位机制成功。
+
+F−E主要正向类pottedplant+0.413979、bird+0.327651、table+0.230639pp；chair−0.500922、bottle−0.206417、tvmonitor−0.140006pp。F−G的主要负向为chair−0.393979、sofa−0.338606、car−0.314333pp；最大正向table+0.220635，去掉它后其余20类均值差−0.037546pp，官方21类F−G仍为−0.025251pp，不用20类指标替换。F新增主要错误转移为BG→sofa30220.667、BG→chair17188、BG→table11624.333，sofa→chair6837.333像素；完整21×21转移和ignore另存CSV。它没有解决chair/sofa混淆。
+
+F/G实际各arm每seed611/634/625 crop，合计3740次encoder，逐image/seed/rank次数和宽高完全一致。科学整体Slurm墙钟33622秒（9时20分22秒，最早成功源GPU start至新报告end，含等待及恢复时间，不是纯GPU时长，不累加并行）；源GPU最早01:54:48至最后03:09:54，报告CPU125秒，独立审计838秒另列。两旧CPU失败30分20/21分32秒保留；数值25文件与bootstrap只完成过一份全量统计，报告未重复它们。原首图部分GT读取和完整pass之外，仅45张唯一GT为70张posthoc图最后一栏重新读取，数值注释来自保存trace。
+
+已下载并逐SHA核104个文件（34小结果/凭据含visual index+70张12面板，合计42378129字节）到`experiments/hpc_results/rgr_adaptive_report_recover_20261021_110000/verified_20261021`，不下载token、模型或批量原预测。summary SHA=`14eb3711c647cce90717ed7cfa31df56b134b0950af021170eaf83e9208e357f`，metrics SHA=`a732fcd2bd05f38924e927df7dfe74d39236d3d1d2e164f2c1d64e609ba0b659`，download_verification SHA=`0fd556cad74526d23398533d9dcf00504c31a6a304d3d767840764442cd0ab10`。独立中文analysis_report.md回答附件42节七问，分析器analyze_verified_report.py只读已保存JSON/CSV，无GT/模型/token/重bootstrap。真实抽查有益2011_000112 seed42（F恢复鸟，valid precision .99595）、有害2009_001535 seed42（误填背景角落，precision0）、随机2007_000572 seed2026（零新增且precision unavailable），12栏清楚、GT最后、E前景不改。QA在visual_QA_001.json，分析/QA/下载proof回传SHA后追加归档凭据。
+
+结论：当前证据更符合generic额外候选的微小增量，没有证明固定retrieval-gap guided位置价值；F微小均值提升不能用于继续扫描或扩大预算。G也只是开发集点估计，不直接替换生产。固定批结束，不追加任何实验，保持原正式R3版本；完整回传核SHA及一次完成通知后删除rgr监测。
+
+最终归档状态为`complete_verified_archived`。analysis_report.md SHA=`910a099c8c1c84cead31b0ef116fa17e740c93a5ef19134618aa3d526f65b135`、visual_QA_001.json SHA=`e63bbf1a13f6d678c5ea0ec2a6af1265d617b93b60e3bf738013678003649f26`、download_verification SHA=`0fd556cad74526d23398533d9dcf00504c31a6a304d3d767840764442cd0ab10`及local_archive_001.json SHA=`a76335b66ea818852123f6fd7b1f702a5e9573afe4d3a542d178416d24288ca4`已独立小文件回传HPC当前报告run并逐SHA核对；未覆盖任何正式指标/源数值、GT、预测或bootstrap。当前批研究计算和验收全部结束，不存在待重跑的模型/预测/SAM3/GT评测。后台rgr在本次一次结果通知前退役。
+
+后台`rgr`监测已通过automation_update工具删除（deleteStatus=deleted）。退役小凭据automation_retirement_001.json SHA=`e0e1fd80b552ff76f221d068aea587b4e3407a832792e196ff8ed9718b897927`保存在本地verified目录并回传本报告run。本批一次完成通知后不再自动唤醒或追加；正式R3版本、生产src/configs与所有历史结果保持原样。
+
+
+## 88. Structured Multi-Crop Proposal Diversification v1（2026-10-21）
+
+用户新附件明确授权执行SMC-v1，版本structured_multicrop_20261021_123600（设计标签、实际提交以Slurm）。原附件/方案/固定参数在experiments/plans/structured_multicrop_v1/{request.md,plan.md,protocol.json}。独立入口tools/experimental_structured_multicrop.py；新run/storage/log/audit均使用structured_multicrop_v1/版本，冻结code位于hpc_launch_audits/版本/code。旧RGR/CrossView源码和结果、正式R3/生产src/configs不改，不部署HPC原不存在的正式入口。
+
+E只读第86节已验收single-view loose（87.183731/86.780938/86.681601%，均值86.882090%），不是严格R3 A。R/H所有1449图片、每图固定额外2个floor(.8W)×floor(.8H)crop，R/H各2898、共5796次encoder；三MLP seed42/123/2026共享geometry和原图GMP，但各自旧MLP/bank独立检索，不复制分数/决策/预测。H只从四角TL/TR/BL/BR依新增center union外覆盖greedy两步选，tie稳定，不硬编码角组合；R按SHA256('structured_multicrop_v1:'+ID+':'+rank)前8little-endian→PCG64均匀合法整数位置，只拒绝与center/前一个random exact同框，最多100重抽，失败不减预算。位置完全不读内容、proposal、检索、类别、GT，不继承RGR的触发/尺度/seed key。
+
+原冻结SAM3/完整20类五桶/context expansion/正常预测presence/1008FP32，每crop一次encoder，仅生成几何，不存crop token或用它分类。mapped mask仅原图签名FP32 72x72x1280→single-phase hard-center GMP rho.1→各自原1280-512-GELU-256 MLP、34880成员/10569BG单库→balanced25/top5/search2/显式center.2。原R3 mapped面积100/max.95、class-NMS.7/hash/cap1保留；跨两view仅对语义eligible池按FP32(.8r+.2q)/candidate ID顺序hash和semantic NMS.7，q>=.4/r>=.9/m>=.05/FG/实时novel>=.1只填E背景。E已有FG绝不改，不跨arm共享候选、不新增全局cap/类阈值。
+
+本地38项测试已通过，含随机/coverage/严格FP32阈值/缓存SHA/GT屏障及合成标签完整CPU评测→2000bootstrap→五组图示尾部；不等于真实GPU/SAM3/精度验收。计划Slurm technical1GPU（两图8个真实计划crop及3seed旧E精确、GMP旧raw数值、原模型库、native映射和E前景保护）→observe四GPU各处理按image分片三seed→CPU evaluate2h；技术8crop及两图完整预测同binding复用，最终仍5796forward。每GPU一计算worker，真实mmlsquota余>=5GiB（最多3瞬时重试、不df），只实际消费1449val token各一次核SHA，不扫12031token或训练库。只有CPUdebug明确QOS且无JobID拒绝才一次GPU配额/CUDA隐藏后备，已有job不重提。
+
+六套8694 PNG/owner/query、5796crop、全部无GTgeometry/diversity/complementarity/budget及内容SHA完成提交后才GT。diversity参考是历史center-R3 post-cap提议池，几何IoU跨类，空center maxIoU0/无候选率null，<.5定义diverse，固定5箱只诊断不gate。评测9逻辑矩阵/E每图历史精确、21IoU、FP/FN/wrongFG/21x21transfer+ignore、每forward效率、三seed均值/样本SD/方向和2000共享image bootstrap（不替代seed方差或独立test）、coverage关系与H-R去最大正类20类敏感性。38测试与全数值矩阵/CSV/metrics/bootstrap先落盘再图示；GT完整pass内保留小palette预览，不为图示重读GT。随机30/最多20H有益/20H有害/20H-R/20R-H图像，效应排序用三seed均值、显示seed42明确标注，GT最后栏，支持不足不伪造。
+
+本段尚未提交：待冻结上传/manifest/JobID后补，不能称正式运行。只有technical通过、四worker真实Slurm/proc/GPU UUID与首批FP32/PNG/模型身份SHA验收后首次通知；正常推进静默。失败具体日志/attempt留存，只取消本ledger未开始依赖；改科学实现新版本和小真实probe，不改运行源码。用户暂停取消即安全停本批与监测，不自动恢复。科学固定批全部完成后唯一独立Slurm审核6个成功child、8694PNG/5796crop/9矩阵/CSV/原模型库字节SHA/geometry/owner/transfer，无GT/token/model decode或重算。小结果与必要图下载核SHA，七问报告/手册同步后一次完成通知并删除新监测。无精度提前gate，不自动Scale/Location/corner/阈值/seed扫描、增加crop、训练、部署、GitHub/打包或邮件排障。
+
+本批已唯一注册提交：technical3758591、observe3758592 array0-3%4、evaluate3758593（debug8CPU23000M2h），全afterok，有JobID不重复submit/prepare/upload。manifest SHA=`429b6851462b6e5ae0dd2908076de90ad36ec1fed6eb3be9c3c94dd47bd3b5c1`、binding=`c67b3df02c897def93d77bd41a8fb60b892afd3f25286d02b421d0befbf4c9a8`；239历史snapshot文件先逐SHA克隆，14本批文件上传逐SHA有效，code_records=247。无CPU QOS后备。集群technical真实38测试已通过无skip，正在真实SAM3/两图crop路径，不能当正式1449结果；四正式worker与startup尚待验收。新后台监测smc已创建，正常阶段静默，固定批验收归档后退役；旧rgr保持删除，不重启旧批。
+
+集群technical3758591现已COMPLETED0:0、3分28秒，真实38测试无skip及两图8计划crop/三seed原E独立像素回归/原GMP对旧raw/native映射/原tokenFP32/每seed独立21类score和E前景保护均通过。report SHA=`fd564cb9ff09f6726a52c17ebba68394091a5c705b5076b5143ef8c60c3e3314`已本地下载核SHA；峰值5208.689453125 MiB，quota=233793486848字节。正式observe3758592四child已RUNNING，仍待startup实际/proc/GPU UUID及首输出审核，技术通过不代表1449质量。
+
+首次正式启动已独立验收：startup_validation status=passed/formal_start_reported=true，SHA=`a17445ceef11e09c551cbe93225f70c789b1e832850a98a50efaabf4dc75cc76`已下载核SHA；四个worker精确ArrayID_TaskID与实际JobID/真实Slurm overlap ps命令/PID/shard、唯一GPU UUID、首FP32 crop与三个21类score、六PNG/owner/E前景保护及内容SHA均通过。实际workers=[{"GPU_UUID": "GPU-0a583fca-d35f-73a1-6092-fa575ce7f912", "actual_job": "3758619", "host": "c2v100m2-4.hpc2", "pid": 860738, "shard": 0, "state": "RUNNING"}, {"GPU_UUID": "GPU-a63f10f0-a1df-941e-6045-b1b2134754b7", "actual_job": "3758620", "host": "c2v100m2-16.hpc2", "pid": 2420930, "shard": 1, "state": "RUNNING"}, {"GPU_UUID": "GPU-97edf60e-5381-8457-7424-e9e5d89cb189", "actual_job": "3758621", "host": "c2v100m2-10.hpc2", "pid": 1954531, "shard": 2, "state": "RUNNING"}, {"GPU_UUID": "GPU-d352379d-ffd7-74c1-c1ea-afc9f9b54ec5", "actual_job": "3758592", "host": "c2v100m2-10.hpc2", "pid": 1954530, "shard": 3, "state": "RUNNING"}]。原center GMP两图首至多2mask探针maxabs均0、bitwise=true，仅针对路径数值回归，不是全token重扫。已正式运行，全1449结果仍待完成；首次启动在本次交互报告后不重复通知或startup执行。自动smc只在完成/失败/必须行动反馈，固定批验收归档后删除。
+
+### 88.1 全量数值完成、独立验收进行中（2026-10-21）
+
+六个科学child均COMPLETED0:0：technical3758591用时3:28；observe3758592四child分别1:00:08、56:29、1:01:09、59:43；evaluate3758593用时1:19:37。5796次crop、六套8694新PNG和9组1449逐图矩阵已完成，无本批failure或活跃科学锁。首GT前全预测提交SHA=`2007cf45fd137399aa83e7db8b9054dd60e9c515c97bb64523ffbcb67c145ac4`；summary SHA=`e2e129873614814da1acc858092b4f87adfeacc8b1b23b32050a496d34016d36`。GT完整评测/2000bootstrap/图示均完成，不再运行推理、检索、GMP或GT数值评测。
+
+保存的数值（独立accept尚待，不能当已验收最高记录）：E均值86.882090%，R均值86.875771%，H均值86.945033%；R-E=-0.006319pp（1/3正），H-E=+0.062943pp（2/3正），H-R=+0.069263pp（3/3正）。H-R配对样本SD=0.046424pp。H-R最大正类为sofa，平均IoU差+1.987510pp；去掉后其余20类均值差-0.026650pp，因此方向信号有明显类别依赖，不能按3/3正单独宣称通用空间覆盖优势。最终需结合已保存的图片区间/错误与diversity表谨慎分析，不新增扫描。
+
+确认audit_job/guard/accept均不存在后，已唯一提交独立只读审核3760520（debug4CPU10G2h）；audit/audit_job_001.json已有JobID，禁止再次audit/verify。审核源码SHA=`8521a84a0f58500b095a244c9f35f8778da0cd0bb778607ec76524c98dd36128`。当前只查audit-status；passed后再下载逐SHA、抽查真实图、外层analyze_verified_report.py/archive_verified_report.py生成七问分析与归档。两个外层脚本只做已保存小文件分析/归档，已语法检查，不在冻结科学snapshot，不重算GT/bootstrap。验收归档及最终通知完成前保留smc监测。
+
+### 88.2 最终独立验收、结果与停止（2026-10-21）
+
+独立审核3760520已COMPLETED0:0、56分46秒，status=passed；accept SHA=`a2baf41d085901be7086cb65a968ef17bfe60fdeb85d27cbe2735f357f64845c`。全部6个科学child成功，8694新PNG、5796crop（R/H各2898）、9组1449逐图矩阵、E历史逐图像素/矩阵、原模型和库字节SHA、FP32三seed独立检索、native映射/owner/transfer/CSV和图示SHA已核，无需重复推理、检索、GMP、GT评测或bootstrap。38目标测试无skip与原8计划crop探针仍为本批正式预算内复用，原GMP bitwise探针只覆盖两图首至多2mask，不外推为全库重算相同。
+
+| 方法 | seed42 mIoU% | seed123 | seed2026 | Mean% | 样本SD pp |
+|---|---:|---:|---:|---:|---:|
+| E 历史single-view loose | 87.183731 | 86.780938 | 86.681601 | 86.882090 | 0.265908 |
+| R 额外随机两crop | 87.165712 | 86.744302 | 86.717299 | 86.875771 | 0.251459 |
+| H 额外覆盖优先两crop | 87.182390 | 86.848879 | 86.803830 | 86.945033 | 0.206787 |
+
+| 配对差 | seed42 pp | seed123 | seed2026 | Mean pp | 正向seed | 配对样本SD pp | 2000共享图片95%区间 pp |
+|---|---:|---:|---:|---:|---:|---:|---|
+| R-E | -0.018019 | -0.036636 | +0.035697 | -0.006319 | 1/3 | 0.037559 | [-0.122242,+0.108409] |
+| H-E | -0.001341 | +0.067941 | +0.122229 | +0.062943 | 2/3 | 0.061936 | [-0.095750,+0.225261] |
+| H-R | +0.016678 | +0.104578 | +0.086532 | +0.069263 | 3/3 | 0.046424 | [-0.091105,+0.230842] |
+
+H-R三seed方向一致，但三组条件图片区间均跨0；最大正类sofa的H-R平均IoU差+1.987510pp，去掉后20类平均差-0.026650pp。H相对E的sofa为+2.180261pp，chair=-1.051478pp、table=-0.257313pp，不能宣称通用结构化覆盖优势。R未稳定复现此前RGR随机组的收益；旧RGR随机组条件于触发图片/次数/尺度，本批所有图片固定两crop，二者不能混为同一协议。H均值更高不触发部署或更改正式R3配方。
+
+H平均几何union覆盖93.982%，R为77.264%；图片支持平均diverse率H20.624%/R12.541%，按候选池化H25.483%/R15.280%。post-cap候选H5435/R5386，center IoU>=.9池化率H34.480%/R51.857%；H确有更多几何新颖与view-only接受，但新颖不等于有效。coverage与diverse率、逐图mIoU差、正确FG的已保存线性相关均很小，只作描述，不能因果归因为coverage。跨模型seed共享一套random布局，并非三个独立随机布局重复。
+
+实际owner新增像素三seed均值：R正确FG93050、背景FP142828.7、错类8431.7、ignore100509.3，valid precision均值37.530%；H正确FG185401.3、背景FP180031.3、错类6884.3、ignore152644.7，valid precision均值49.360%。precision_all分别26.581%/35.000%，ignore进分母不当正确。H-R正确FG多92351.3，同时背景FP多37202.7、错类少1547.3；H平均net_valid=-1514.3，R=-58210.3。每forward正确FG H63.9756/R32.1084，net_valid H-0.5225/R-20.0864。像素计数与mIoU权重不同；背景型FN下降包含新增错类，不能全部叫正确恢复。H较R新增正确sofa像素平均多105148.3，是明显的类别依赖来源。
+
+数值/CSV/bootstrap先保存后绘图；110张真实图（random30、H helpful/harmful及H-R/R-H各20）均保存于visualizations，GT由同一次完整评测pass的小palette预览生成最后栏，不重读GT。已本地查看五组各一例，visual_QA SHA=`d7f813cce84f408c718082bb9cea3d87e44304f4e553fe8f67c6fbdf081ad8d0`。逐图mIoU排序会因极少像素引入缺席类别而出现大跳变（例如2008_000662背景误报及2010_004042的一像素误报）；图示单图±33pp不代表数据集贡献、不能相加。
+
+本地下载并逐SHA核对143文件（33小统计/验收与索引、110图），目录`experiments/hpc_results/structured_multicrop_20261021_123600/verified_20261021`。中文七问分析`analysis_report.md` SHA=`dbe1171ecb3458d46e797450b5c5568255fb8444d78f1c1741fc179cb1f412d5`；下载proof SHA=`89f42e08f3f3385dfdda5f513b5d48048ee254834a085eef4c7482a03f2c30f7`。分析、下载证明、visual QA已上传run并远端核SHA；`local_archive_001.json` SHA=`a7819a5ce25bf889cee19f5565128437ae51c7090015e53f296c971bab8eee83`，原数值/GT/bootstrap未重算。本地初稿保留为analysis_report_draft_001.md，正式分析补齐coverage相关与单图解释边界，不改科学快照或原指标。
+
+角色耗时：technical3:28，四observe56:29–1:01:09（并行），evaluate1:19:37，独立audit56:46单列；科学整体墙钟为最早科学start至最后科学end=8654秒（2:24:14），不累加并行。真实单worker GPU峰值最大5211.3583984375MiB；技术时真实GPFS余233793486848字节。固定批结论为小幅、类别依赖的方向信号，未验证通用位置优势；建议停止继续增加R3 crop预算，不扫scale/corner/seed救结果。只写后续建议，不执行新实验，不训练、部署或GitHub发布。归档和手册同步核SHA后退役smc监测。
+
+
+## 89. T4-hard Local Tiling v1（2026-10-21，用户附件并行授权）
+
+附件、注册规则和方案见 `experiments/plans/t4_hard_v1/{request.md,protocol.json,plan.md}`。版本 `t4_hard_20261021_172500`，独立入口 `tools/experimental_t4_hard.py`；独立 run/storage/log 分别为 experiments/t4_hard_v1、storage/proposals/voc/t4_hard_v1、logs/t4_hard_v1 下版本目录；audit/code 在 experiments/hpc_launch_audits/版本。与第90节并行、独立 ledger/manifest/GT屏障，不组合运行。
+
+仅从已验收 E 开始，每张1449图原图坐标按 floor(W/2),floor(H/2) 分 TL/TR/BL/BR 四个无重叠半开象限，奇数余量右/下；固定5796额外 SAM3 encoder，三seed42/123/2026共享几何和原图GMP但独立 MLP/库检索。完整20类5桶、正常presence、1008 FP32，原mapped过滤；仅原图签名72x72x1280 token hard-center GMP rho.1→原1280-512-GELU-256 MLP/34880成员10569BG→balancedK25/top5/search2显式center.2。E式q.4/r.9/m.05、semanticNMS.7/live novel.1，只填E背景。内部边界touch仅诊断，绝不gate。主要比较T4-E/T4-H；T4四forward对H两forward非算力匹配。旧E/H、生产入口与配方不改，不部署。
+
+来源 SMC manifest SHA 429b6851462b6e5ae0dd2908076de90ad36ec1fed6eb3be9c3c94dd47bd3b5c1、accept SHA a2baf41d085901be7086cb65a968ef17bfe60fdeb85d27cbe2735f357f64845c 已通过本轮native SSH实际读取核对；旧批已结束，无旧计算需要重跑。新控制器 `experiments/plans/t4_hard_v1/local_control.py`（委托公共 t4_rli_parallel_v1/control.py）仅处理本 ledger。初次clone已完成247来源源码，冗余sam3-main链接创建FileExistsError发生在上传新文件/注册/sbatch之前，已只修外层布局判断并逐SHA接续，保留layout_recovery_001；无JobID/计算/科研失败。不得重复upload/prepare。
+
+本地36目标CPU检查无skip，包括两批合成预测SHA提交→九矩阵/CSV→2000bootstrap→真实绘图尾部；不代表集群CUDA/SAM3或精度。拟定 technical 两图8实际计划crop正式复用→四GPU observe→CPU evaluate。所有新预测内容与无GT flow/diversity/预算先提交后GT，分tile/内部边界/面积分箱报告actual owner质量。完整数值先checkpoint再图示，GT palette在数值pass内保留，GT最后栏不重读。三seed方向、样本SD、2000共享图片bootstrap（VOC开发、固定模型，不替代seed不确定性/独立test）。当前尚未提交，实际JobID/manifest/技术startup待后补，不能宣称正式运行。
+
+## 90. H Retrieval Leave-One-Patch Refinement v1（2026-10-21，RLI）
+
+附件/参数 `experiments/plans/h_patch_refinement_v1/{request.md,protocol.json,plan.md}`；版本 `h_patch_refinement_20261021_172500`；入口 `tools/experimental_h_patch_refinement.py`。run/storage/log 只在 h_patch_refinement_v1/版本，audit为独立版本目录；公共科学实现 t4_rli_{core,runtime,worker,evaluation,visualize,schedule}.py 固定冻结到各自code，不修改历史snapshot或生产。
+
+零新SAM3/训练/库，固定第88节完整H accepted extra mask、候选排序/类别/最终owner。CPU先完整读取saved H mask/owner和hard-center indices作无GT patch inventory，不读token；之后完整原I baseline重新GMP→各seed原MLP/bank→retrieval：label精确，score/margin/全部21类分数abs<=1e-5，不符停止报错。|I|<=1保持。原I每patch逐一去掉→原精确FP32 uniform_gmp（不近似、不直接patch→MLP）；同原类、原类score和margin均严格增>1e-6才harmful。一次固定rank按score_gain/margin_gain降序index升序；greedy每步重算J去一patch，label不变且score/margin>=current-1e-6才接受，至少留一patch。无隐藏cap/抽样/额外阈值；每worker48h为调度上限，不减科学预算。
+
+被删patch对应原图72x72整数cell与原mask、原owner交集置背景；不重排、回填、改类或动E。RAND每candidate从原I抽RLI实际删的k，key=`image_id:seed:candidate_id:rli_random_matched_v1`，SHA256首8字节little-endian→PCG64无放回，patch数匹配而非面积。所有6套新PNG/NPZ/删owner map和完整noGT trace/SHA先提交后GT。输出RLI-H/RAND-H/RLI-RAND，removed BG FP/正确FG/错类/ignore、retention/removal率、21x21transfer、patch gain与GT多数类型、删比例三分位（linear quantile，同值不拆，空组null）owner非可加counterfactual。图示最多20有益20有害30随机，GT最后栏。
+
+同36本地CPU检查通过，真实baseline/MLP/库/GPU路径尚待集群technical，不把本地测试当方法质量。source与初clone修复依据同89；只控制本ledger。CPUinventory→GPUtechnical（实际首两张有H extra图完整候选，正式复用）→四GPUobserve→CPUevaluate。每seed全1449，不跨seed复制分数或carving。
+
+两批各完成后唯一独立Slurm CPU audit（不GT/token/model decode或重算GMP/检索/bootstrap），核科学child、PNG/owner/crop/CM/CSV/原模型库字节SHA/trace/预算。验收后小结果/必要图下载逐SHA，独立五问分析与归档、手册同步。两批完成/验收后以各自主要mean delta>0且>=2/3正只写JOINT_RECOMMENDED，另披露RLI-RAND；不自动联合、overlap、扫描、训练或部署/GitHub/打包/邮件排障。用户暂停取消立即安全停所指ledger和监测，不自动恢复。当前两批尚未注册/提交，待真实ledger补充。
+
+### 89/90.1 实际注册提交（2026-10-21）
+
+两套源码各247来源+16新文件SHA已核，初clone布局修复只发生注册前，无JobID/计算；外层layout_recovery_001保留，科学实现未因此修改。两条全afterok依赖链均已唯一提交，不能重复upload/prepare/sbatch。T4 technical3761836、observe3761837 array0-3%4、evaluate3761838；manifest SHA `495c305c7b727d322d3acc139034beb7009d53f65fe9f4679fdfca093b1fcb1f`，binding `2f9e8d1d3717b0e8bc11a8698cde350a9a62e754939c1b37d242da64f60f4010`。RLI inventory3761832、technical3761833、observe3761834 array0-3%4、evaluate3761835；manifest SHA `13eed5332fae8e3a8231efa32c40d90286f05bd0350a647c1c8deff93c08b262`，binding `e0f417f7283742213cba7011cd4f61deed912f2196d4b217d0c76ba5daee57e9`。
+
+两evaluate原debug8CPU23000M2h请求均明确QOSMaxSubmitJobPerUserLimit且无JobID，被拒后仅一次v100g32单GPU配额6CPU24G、CUDA隐藏CPU后备，resource_fallback_evaluate_001.json登记；不是科学质量失败，不声称零GPU资源分配。RLI inventory真实debug请求成功。技术与完整worker初产物/正式startup尚待，36本地CPU测试不代表CUDA或1449质量。实际ledger在各audit/jobs.json。后台监测只核本批小progress/log/complete/failure，正常推进静默，首次正式验收/失败/最终收尾再通知。
+
+### 89/90.2 全量数值完成、独立验收中（2026-10-21）
+
+两批所有科学child均COMPLETED0:0且无failure/活跃科学锁：T4 technical3761836 26:05，四observe3761837_0/1/2/3分别1:44:40/1:51:45/1:50:49/1:46:23，evaluate3761838 1:15:53；RLI inventory3761832 43:06、technical3761833 11:12，四observe3761834_0/1/2/3分别24:02/1:03:42/1:07:47/1:14:24，evaluate3761835 51:22。T4完成5796crop、4347新PNG和9组1449矩阵；RLI完成8694新PNG和9组矩阵，零新SAM3。两批2000共享bootstrap与各70张GT最后栏图示已完成，数值checkpoint均GT_images=1449/bootstrap_completed=true，不需要重跑推理、GMP、检索、GT数值评分或bootstrap。
+
+T4 technical_report SHA `57bc389b1bdda11b64c04f17cafc84595edb5866dd592b1a31b73e454907cc9a`；36目标集群测试无skip、两图8计划crop、原E三seed独立像素回归及原GMP两图首至多2mask探针maxabs0/bitwise=true，不能外推全面重算一致。技术GPU峰值5228.16455078125MiB，真实GPFS余233294282752字节。RLI technical_report SHA `204e1fe3924e0ce6366b166e3226d3d1480851b935c346727e83bd648ede5cae`；36目标集群测试无skip，2007_000529/2007_000636两有H extra图真实完整refinement，原E三seed像素回归通过，零SAM3；技术峰值88.1181640625MiB，quota232818974720字节。完整RLI worker最大峰值90.86767578125MiB。
+
+保存数值（尚待独立accept，不称最终已验收记录）：E mean86.882090%、H86.945033%、T4 86.787865%、RLI86.932147%、RAND86.939891%。T4-E=-0.094225pp（0/3正）、T4-H=-0.157168pp（0/3正）；RLI-H=-0.012886pp（1/3正）、RAND-H=-0.005143pp（1/3正）、RLI-RAND=-0.007744pp（0/3正）。T4四forward对H两forward非算力匹配；RLI未优于相同删除patch数随机对照，不能把语义分数单调提升当像素正确性证明。固定批不追加联合/overlap或阈值扫描。T4 summary SHA `3a303685c86649b64f6e43cbad71f703d296c364b6b24bc44b3a9320a5e036de`；RLI summary SHA `a0ae76304057998d26e3e7cfeac26b2f06dd969236408b93cd64eb9bb7fc7100`。
+
+确认两批 audit_job/guard/accept均不存在后，各唯一提交独立只读审核：T4 `3764455`（debug4CPU10G2h），RLI `3764456`（debug明确QOSMaxSubmitJobPerUserLimit无ID后唯一v100g32 1GPU配额、CUDA隐藏CPU后备，4CPU10G2h）。两audit_job_001.json现已存在，绝不再audit/verify提交；只audit-status。audit不读GT/token/modeltensor，不重算方法。完成worker的startup仅回顾核验complete+sacct/保存GPU UUID/产物，不伪造本回合观测过存活/proc，不再重复发启动通知。passed后再下载逐SHA/真实图抽查/独立五问分析归档与joint仅建议。最终验收归档前保留t4-rli监测。
+
+回顾startup核验均passed，并已下载小proof逐SHA：T4 startup SHA `b8821dbaf3b69e756d204054c57f949dc83cfe61dcce53be380718baaf17b003`，RLI startup SHA `e5af7d3ad6104ac3c8b595f96fbc9002ec276aa6c484a286a6f5028f8d9d4701`。全部worker均按COMPLETED+sacct+保存产物/单GPU UUID核，不声称本回合观察过存活进程。两technical/startup/audit ledger小proof均位于各plan/launch_receipts/版本/small_proofs_20261021。
+
+保存的2000共享图片95%区间（pp）T4-E[-0.427682,+0.183490]、T4-H[-0.482462,+0.144537]，RLI-H[-0.052050,+0.023902]、RAND-H[-0.035741,+0.024776]、RLI-RAND[-0.017489,+0.000762]，均跨0，不能宣称统计显著退步。停止依据为预注册正向均值/多数seed条件不满足。T4相对H平均BG FP多144735.7、错误前景类别多8011、背景型FG FN少52551.7；其中正确FG实际多44540.7，不把错类当正确恢复。RLI每seed平均删BG FP42001.7、正确FG34959.3、错类915.3、ignore27447.3；相对RAND多删BG FP3709，同时多删正确FG6272。semantic score单调不等于pixel quality。
+
+报表字段需在独立analysis说明：原summary/extra_pixel_quality的accepted_candidate_count=0来自报表调用默认占位，不代表实际没有accepted；实际T4 count可核t4_candidate_flow，原H extra count可核RLI inventory/refinement trace。RLI原quality字段added/correct描述被删除的原H owner像素，不能叫新增/正确恢复。外层posthoc_details.py只读验收后保存CSV生成posthoc_diagnostics_001.json/derived_quality_counts.csv和五问具体数值分析，不改正式指标或冻结科学代码、不读GT/重bootstrap。当前自动监测在本地原为PAUSED、60分钟（用户/app设置），本次仅更新状态说明并保留PAUSED，未自动恢复；独立Slurm审核不依赖监测在线。
+
+### 90.3 RLI独立验收与归档（2026-10-21，最终）
+
+独立审核3764456已COMPLETED0:0、36分12秒，completion_acceptance_001.json SHA=`7840a0b7af5e6297b4d4bda45f48884f3cdb4c7349cedd01fde6d4387c84abab`。七个科学child全部COMPLETED0:0；8694新PNG/NPZ、完整baseline/single/greedy/RAND/owner记录、原模型库字节SHA、九逻辑矩阵逐图求和/H旧历史、CSV与bootstrap一致性均通过。真实baseline最大差2.384185791015625e-7，低于1e-5。独立审核不读GT/token/modeltensor、不重算GMP/检索/预测/指标/bootstrap。无科学失败；原debug QOS拒绝及唯一CUDA隐藏GPU配额后备保留，不将资源分配称为零GPU。
+
+| 方法 mIoU(%) | seed42 | seed123 | seed2026 | 均值 | 样本SD(pp) |
+|---|---:|---:|---:|---:|---:|
+| H | 87.182390 | 86.848879 | 86.803830 | 86.945033 | 0.206787 |
+| RLI | 87.185671 | 86.828086 | 86.782683 | 86.932147 | 0.220729 |
+| RAND | 87.193461 | 86.834402 | 86.791808 | 86.939891 | 0.220629 |
+
+RLI-H均值−0.012886pp，1/3正，配对样本SD0.014003pp；RAND-H−0.005143pp，1/3正，配对SD0.014095pp；RLI-RAND−0.007744pp，0/3正，配对SD0.001405pp。共享2000图片bootstrap的95%区间分别[−0.052050,+0.023902]、[−0.035741,+0.024776]、[−0.017489,+0.000762]pp，均跨0。不能宣称显著退步；当前influence选择未验证出稳定优于H或随机对照的收益，预注册继续条件不满足。RAND仅匹配每candidate的删除patch数，不匹配删除owner像素面积。
+
+RLI每seed平均删除BG FP42001.667、正确FG34959.333、错类915.333、ignore27447.333像素；原H的BG FP平均180031.333。在原H extra的owner像素范围内，RLI平均seed BG去除率23.5052%，正确FG保留80.9871%；RAND为21.4065%/84.4918%。这些比例不代表完整分割图的全部前景，原E前景始终不动。删除valid像素中BG比例的seed均值RLI54.3423%、RAND56.9361%，RLI三个seed分别也都低于RAND。相对RAND，RLI多删BG FP3709，同时多删正确FG6271（以保存retention表逐seed求和为准，纠正前段初步文字约6272的转录误差），多删错类62.333，并增加FG FN6333.333。像素净变化和macro IoU权重不同，不用原始像素差替代mIoU。
+
+H extra候选数seed42/123/2026为154/163/159，总476；原selected patch数33641/45509/41211，总120361，三个seed各一候选支持<=1保持不删。原I单删判定harmful数10528/15145/13049；greedy实际删除6246/8288/7744，共22278patch，发生删除的候选137/149/146。平均candidate删除比例约20.29%/20.22%/21.05%，原类score平均提升0.011542/0.012802/0.012348、margin提升0.065376/0.054635/0.061167；语义分数提升并未转化为更好的像素分割。已删除patch中owner GT多数类为background4130、correctFG4001、ignore3251、mixed32、wrongFG149，另10715个无最终H owner像素、诊断unavailable；不能把所有被删token都当实际删掉图像区域。
+
+RLI-H正向类chair+0.145789、people+0.098492、table+0.089662pp；负向sofa−0.323551、pottedplant−0.141173、cat−0.074157、horse−0.062946、sheep−0.043264pp。RLI-RAND主要损失pottedplant−0.065374、sofa−0.064546、cat−0.033500pp。完整21类、转移/ignore及删比例linear三分位owner-only非可加反事实保存在CSV和posthoc_diagnostics_001；不同seed分组方向不稳定，不反向调阈值。粗72cell删除与语义influence/像素质量不一致是当前方案边界，不能由此宣称任何patch influence方法都无效。
+
+小结果已逐SHA下载103文件（33小结果含visual index、70图，共48467351字节）到`experiments/hpc_results/h_patch_refinement_20261021_172500/verified_20261021`。download_verification SHA=`2ce7ab3ea11527da39e523adef1460f32d37362ff529262eac58c81106f54f52`。只抽查三张真实12面板：random2007_000847为真实无extra/no-op；helpful2007_004189按三seed均值入选，但展示seed42无实际删除，不能拿该面板证明seed42获益；harmful2011_001190展示seed42删除35owner像素，其中25正确FG、0BG FP。GT均为最后栏，排名用三seed均值、展示seed42，单图IoU非数据集可加贡献。没有为抽查重新读取GT或推理。
+
+analysis_report.md SHA=`ddda3152d2e03594be947e818f407d9082e6e8445c79c1278f393ca008dc6ebb`；posthoc_diagnostics SHA=`ab68eecd4005fc90081516d4090a1e5c711e86eca3859ab8825da62050a177c4`；derived_quality_counts.csv SHA=`d9edd653e89152dab1002352219af9086ebbb996e5ab29d2db778cc53654ce38`；visual_QA SHA=`1d1b354ced28b28bc360f9bff9d115b5de47048753c65e5d97f5a8ae977039a0`。这些独立小分析、资源/QA与下载proof已上传当前RLI run并逐远端SHA核；local_archive_001.json SHA=`7cdfbfb4b12f23429d966f61c8397bc3e0dc312bee639c51af4f461960a11ebf`。原正式summary/metrics/CSV及冻结科学源码不改。
+
+RLI科学整体Slurm墙钟12213秒（3:23:33，最早start17:44:14至最晚end21:07:47，北京时间），不累加四worker并行时长；各角色耗时见90.2与resource_snapshot_001，独立审核36:12另列。保存的真实单worker最大torch.cuda.max_memory_allocated=90.86767578125MiB，非整卡资源申请量。RLI固定批已验收归档结束，不追加研究；双批joint建议及监测退役待T4独立验收归档后仅写报告，不执行联合实验。
+
+### 89/90.4 T4最终独立验收与五问诊断（2026-10-21）
+
+T4独立审核3764455已COMPLETED0:0、57分40秒，completion_acceptance_001 SHA=`78f5c1e60d76892b3b5ecdb773c40e2103302077cbf26af3d04ba03cd2bdacc9`。六科学child均COMPLETED0:0；5796真实crop、4347新PNG/NPZ/owner、原模型库字节SHA、九矩阵逐图求和/E与H历史、CSV/2000bootstrap/几何与内容SHA均通过；不读取GT/token/modeltensor、不重做方法或bootstrap。图示与指标均来自原先完整GT pass，当前抽查没有额外GT解码。
+
+| 方法 mIoU(%) | seed42 | seed123 | seed2026 | 均值 | 样本SD(pp) |
+|---|---:|---:|---:|---:|---:|
+| E | 87.183731 | 86.780938 | 86.681601 | 86.882090 | 0.265908 |
+| H | 87.182390 | 86.848879 | 86.803830 | 86.945033 | 0.206787 |
+| T4 | 87.027983 | 86.727243 | 86.608369 | 86.787865 | 0.216276 |
+
+1. 四等分是否提升：T4-E均值−0.094225pp，0/3正，配对样本SD0.054169pp；2000共享图片95%区间[−0.427682,+0.183490]pp。
+2. 是否超过H：T4-H均值−0.157168pp，0/3正，配对样本SD0.036990pp；图片95%区间[−0.482462,+0.144537]pp。两区间均跨0，不称显著退步；预注册正向均值/多数seed条件不满足。T4每图4次encoder对H的2次，不是算力匹配。
+3. 小目标/局部尺度：实际accepted数seed42/123/2026为363/347/358，共1068个模型-candidate实例；原图mask面积<1%有576（53.93%），<5%有928（86.89%）。平均mask/tile面积9.3689%、mask/original2.3429%，数量主要是小mask。但mask面积不是GT物体尺度证据，不能独立归因于局部scale。<1%组每seed平均仅恢复9561.333正确FG、BG FP24248，valid precision seed均值27.1450%；>=10%组恢复98024正确FG、BG FP124090.667，precision43.3788%。有效像素恢复并非主要来自最小mask。
+4. hard boundary：接触内部边界组每seed平均accepted234、正确FG200672.333/BG FP253723.667，valid precision均值43.2445%；未接触组accepted122、正确FG29269.667/BG FP71043.333，precision28.0837%。接触组体量较大，不能仅用其错误总量判断失败；其precision并未更低。当前描述性分组不支持认定hard boundary是主要失败来源，也不能证明边界没有因果影响，不据此追加overlap。
+5. 下一阶段proposal source：不推荐采用当前T4或继续扩张tile预算。固定四象限在三个seed均未提升，保留H参照，不追加overlap、尺度/位置/seed扫描或联合。
+
+T4新增E背景owner像素每seed平均723971.667：正确FG229942、BG FP324767、wrongFG14895.333、ignore154367.333；valid precision seed均值40.4400%，precision_all31.8460%（ignore在分母但不当正确）。每model每实际forward正确FG39.673、BG FP56.033、wrongFG2.570；这些效率不是mIoU贡献。相对H多恢复正确FG44540.667，同时多BG FP144735.667和wrongFG8011。T4-H的FG FN下降52551.667包括新增错误前景，不全是正确恢复。
+
+TL/TR/BL/BR的新增valid precision seed均值34.6290%/62.7560%/50.8232%/24.8886%，各位置体量/内容不同，仅作事后描述，不改角落规则。T4-H正向pottedplant+1.059914、car+0.520739、people+0.447185、sheep+0.412790、chair+0.379666pp；损失bottle−2.808518、sofa−2.290168、bird−0.959296pp。去最大正类pottedplant后，其余20类均值差−0.218022pp；正式21类差仍−0.157168pp，不以删类指标替代正式结果。
+
+已下载101文件（31小结果含visual index、70图，共33559575字节）到`experiments/hpc_results/t4_hard_20261021_172500/verified_20261021`，逐SHA核通过。download_verification SHA=`776ea799f70cbce2b62c4b96f55f1a2c2733169b07392a89f85434fa286f8810`。真实12面板抽查：random2007_000033飞机是无新增owner/no-op；helpful2011_000112水鸟中E空、H恢复左鸟、T4恢复两鸟；harmful2010_002142在已有鸟前景外把喂食器大片误填前景。GT均最后，展示seed42/按三seed均值选组，单图macro非可加整体贡献；不能用有益一图反驳整体负方向。
+
+analysis_report.md SHA=`d452b8dd3350b28591417f4aea7de65b14f0b78a7c317aa12ddaf210a17985bd`，posthoc_diagnostics SHA=`6038dc6cc874e202d5f07200d1a5bf4b41677b84d824a0cd2c1cf839c4e46e62`，derived_quality_counts SHA=`9e31aecdc27e1a22975ddcd07e07ea2cfaa3281bc7011ae2e9acac89059beb4d`，visual_QA SHA=`720ed90e9cb5cbe67421dbf27f0d8b0400659cbf304768926574be4b2b3c9820`。独立分析只读保存JSON/CSV，原accepted_count默认占位另用真实flow补充，不覆盖正式metrics/summary/CSV或冻结科学代码。
+
+T4科学整体Slurm墙钟13098秒（3:38:18，北京时间17:46:53至21:25:11），不累加四worker并行时长；角色时长见89/90.2，独立审核57:40另列。保存的真实单worker最大torch.cuda.max_memory_allocated=5228.16455078125MiB。技术探针8forward已计入5796固定预算；没有额外crop、训练/新库或原图SAM3。最终小分析远端回传、联合建议只写报告及手册同步凭据在后续收尾段登记。
+
+### 89/90.5 双批最终归档与Recommended Next Step（2026-10-21）
+
+两批状态均为`complete_verified_archived`。T4小分析/下载proof/真实QA/资源及派生计数已回传当前run逐SHA核对，local_archive_001 SHA=`05fe103f7481b8b8e209a87ba3004574fcac6f871513f4419ef217abd7bb2cd3`；RLI同名归档SHA=`7cdfbfb4b12f23429d966f61c8397bc3e0dc312bee639c51af4f461960a11ebf`。两个download_verification和归档引用的本地文件均再次逐SHA核对，未下载模型/token或批量原预测，没有重跑GT数值评分、bootstrap或任何科学计算。
+
+仅在两批独立验收/归档后运行外层`finalize_joint_recommendation.py`，依据T4-H和RLI-H各自mean>0且至少2/3 seed正的固定条件生成新报告。二者均未满足，`JOINT_RECOMMENDED=false`；RLI-RAND三个seed也均为负。该方向条件不是显著性判定，五个共享图片区间均跨0。两run的joint_recommendation_001.json字节一致，SHA=`3fc834277a223a7fd755daec8652d038fd3ba1273d869e897d1bd190f913c6e1`。没有运行联合实验。
+
+各自新summary_final.md保留原summary正文，附已验收分析/字段说明/Recommended Next Step，最后一行均为JOINT_RECOMMENDED=false；原summary/metrics未覆盖。T4 summary_final SHA=`35a0f873514a4f553f48ae54308d1bf2c8ca5c25b47e67c2c4e80529d271228c`，RLI SHA=`2788cec8287e932a3dd40686ecb1c8a5cb861497a77f1c5db9e6b3dcbd8171e9`。这两文件和建议均已上传各自run且远端SHA核对；final_report_archive_001.json分别SHA=`8d9445981181736236e17c940cd698a6d5bc999a2e9be7f4d2ec9ceff810865f`（T4）、`508297ed3a806ed4aea757a1c48889dafa50fd4399982ab7892778be03161e6e`（RLI），其引用文件本地也逐SHA核对。
+
+**Recommended Next Step：保留已验收H参照，停止本固定批，不采用当前T4或RLI规则。若未来另获授权开展研究，应优先诊断新增proposal的precision/像素错误代价，而非继续增加proposal source预算；本次RLI负结果不证明其他precision方法必然有效。** 不自动T4+H/T4+RLI、overlap、尺度/位置/阈值/seed扫描、新训练/库/标签、部署/GitHub/打包或邮件排障。两套36目标集群检查、各自真实技术探针、回顾startup和最终独立审计均保留其证据边界。固定批已无待计算任务，手册同步核SHA后退役t4-rli监测，不恢复其PAUSED状态；最后只发一次完整结果通知。
+
+## 91. Patch Foreground–Background Separability Diagnostic v1（PFBS，2026-10-21附件授权）
+
+这是固定H的独立诊断，不是新分割/mIoU实验。计划、原附件与精确规则在`experiments/plans/patch_fb_separability_v1/{plan.md,request.md,protocol.json}`，版本`patch_fb_separability_20261021_234500`；入口`tools/diagnose_patch_fb_separability.py`，新增core/runtime/analysis均在tools下。run=`experiments/patch_fb_separability_v1/版本`，计算缓存=`storage/diagnostics/patch_fb_separability_v1/版本`，audit/code与log各用独立版本。旧SMC/RLI/T4/R3、生产src/configs、原H/模型库均不改；0 SAM3/训练/新库/新crop/新预测/新mIoU，不carve/raster或筛选patch。不自动跟进refinement、阈值/邻域/分辨率扫描、部署/GitHub/ZIP/邮件工作。旧t4-rli监测已实际删除，不重启旧批。
+
+已native SSH只读核来源：RLI manifest SHA=`13eed5332fae8e3a8231efa32c40d90286f05bd0350a647c1c8deff93c08b262`、independent accept SHA=`7840a0b7af5e6297b4d4bda45f48884f3cdb4c7349cedd01fde6d4387c84abab`。其SMC H accepted source/owner/掩码/类别/顺序固定；476 candidate-model实例、120361 selected-patch行，三seed42/123/2026。原RLI trace_no_GT的original_indices和single gain只读join，不读取旧patch_influence_GT作为新推理输入，不重跑RLI。三套bank meta均21类，id0为background；原retriever确实返回按该metadata排列的完整21分数，能合法计算c-bg，无新背景prototype。
+
+对每实际需要的原图token i，真正调用原冻结`uniform_gmp(F[i:i+1],[0],rho=.1)`，FP32原Cholesky/残差1e-4/最终L2；不跳成direct token→MLP。技术探针还比较原整token输入`uniform_gmp(F,[i])`与slice调用逐元素相同，记录真实finite/norm/Cholesky/residual与full-I H baseline三seed分数回归<=1e-5。同image相同singleton GMP可共享，三个原MLP/bank检索仍各自独立；缓存仅实际需要的patch，不预扫12031旧token或全库。N=1若不支持即SINGLETON_GMP_UNSUPPORTED停止，不补邻居/换pooling。所有seed全量记录raw/projected方差、class-score方差、top1 entropy；明显退化时结论只能INCONCLUSIVE/INCONCLUSIVE_SINGLETON_REPRESENTATION，不由entropy为0单独判退化。
+
+局部证据score_c、candidate-class margin、合法c-bg及production top1/tie语义和独立top1 margin保存；背景不可用分支必须UNAVAILABLE并保留其他分析。每patch的完整21分数与原candidate/seed/patch身份保留。先合并并SHA锁定`patch_evidence_no_gt.csv`与`patch_evidence_commit_001.json`，然后本批才读取GT。GT仅标注整数72cell∩H final owner，分别记correct/background/wrongFG/ignore；NO_OWNER/NO_VALID不进primary。purity_balance=(correct-bg)/valid，PURE>=.80固定，MIXED不进二分类；不把整个cell或完整mask替代owner交集。
+
+主要Spearman，二级AUROC/AUPRC（同阈值grouped AP）、均值/中位数/Cliff delta。逐seed后等权macro/sampleSD。2000次PCG64 seed42、从完整原1449 image IDs共享重采样，整图内全部candidate/patch保留，精确频数权重midrank/ROC/AP与显式重复图样本等价；不使用patch iid CI。原gain按原方向报告，另预注册负gain作为higher=FG的有利RLI基线，不在GT后翻方向。每个local指标都在相同joined行上与两种负gain比较。附件“明显优于”补齐为：对两基线均三个seed配对AUROC差>0，且至少两个seed配对image95%下界>0；同时需该local指标三seed Spearman>0/AUROC>.5、至少两seed绝对AUROC95%下界>.5。每所用区间至少1000/2000有限rep；其余方向不稳/明确不优或不确定按protocol分别NOT_SUPPORTED/INCONCLUSIVE，不强行通过。多个预注册指标和已看VOC开发集的条件区间均不能当独立test或训练seed方差。
+
+20类分解AUROC须两纯组各>=10，否则UNAVAILABLE。candidate score/proposal/margin按seed的candidate级linear三分位、ties不拆/空组null；新颖度仅原center-reference固定5bin，不gate。四组图示各请求20实际patch：高证据正确FG、低证据BG、高证据BG失败、低证据正确FG失败，按保存分数排序的posthoc极端案例，不拟合high/low阈值；不足如实。RGB/Hmask/cell/owner交集/GT最后栏，GT palette由本次composition pass缓存，绘图不重读GT。数值/CSV/bootstrap先numeric_completion再图示，数值全量已完成不能因图示失败重跑。
+
+调度拟为CPU inventory→GPU technical→四GPU evidence→CPU analyze，全部afterok；一GPU一worker，各worker含原三MLP。CPUdebug最多2h，只有明确QOS无JobID拒绝才唯一GPU资源/CUDA隐藏后备，记录真实分配。使用已验证nativeSSH/SCP、固定ED25519/BatchMode/StrictHostKeyChecking，私钥仅本地读，不输出上传。GPFS实际mmlsquota余>=5GiB最多3瞬时尝试，不df。控制session未返回不重复mutation；纯GPFS等待不当退出。
+
+30本地CPU检查无skip，包括合成2000bootstrap→四组80图示尾部、加权ties/空组/背景不可用/退化/决策分支；本地torch缺失，不称真实singleton GMP/CUDA已过。实际JobID/manifest及真实两图技术结果待注册后补；此段不代表已启动。真正四worker首产物/Slurm实际命令/GPU UUID验证后才首次正式startup通知。最终唯一独立Slurm只读审核核7科学child、完整120361行、H/模型库/源代码与产物SHA、score/composition守恒、保存bootstrap draws/replicates区间/decision及80图；不解码GT/原token/modeltensor，不GMP/检索/重采样。controller verification不是独立accept。
+
+验收后仅小结果/必要图下载逐SHA并真实QA/回传proof，三张大patch表留HPC完整签名产物，不下token/模型或大量原预测。手册91同步核SHA，固定批验收归档和一次结果通知后删除本批监测；只输出FEASIBILITY_SUPPORTED/FEASIBILITY_NOT_SUPPORTED/INCONCLUSIVE及Recommended Next Step，不执行推荐新方法。用户暂停/取消立即停本ledger和监测、不自动恢复。失败保留真实attempt/异常，仅取消自有未启动依赖；实现修复新版本，不能改运行快照或绕SHA。
+
+### 91.1 实际冻结与一次提交（2026-10-21 北京时间23:47）
+
+快照257来源文件和12本批文件逐SHA核通过。manifest SHA=`acbfb415cacfe7d96427b49c4c2526785e2f7ef5b40793d4ae6ff834610a72f3`；binding=`63b83d8a0116633ddd7d53f8f43fb5f0be09bce7620534179ef5672f81c156cf`。audit/jobs.json实际inventory3765586（debug8CPU23000M2h）、technical3765587（v100g32单GPU4CPU24G2h）、evidence3765588 array0-3%4（每worker单GPU4CPU24G8h）、analyze3765589，四阶段全afterok成功提交，禁止重复upload/prepare/sbatch。analyze原debug8CPU23000M2h明确QOSMaxSubmitJobPerUserLimit且无JobID后，仅一次v100g32单GPU资源配额6CPU24G、CUDA隐藏CPU后备；resource_fallback_analyze_001保留，不是科学失败，也不称零GPU资源分配。
+
+当前163张有H extra图的源清单核验中，覆盖476候选实例/120361 patch行，未把无H extra图片当GT筛选；bootstrap仍完整1449图总体。首次实际inspect核inventory3765586 RUNNING（c21507），其余依赖等待。无真实技术通过或最终可分性结论，不能将30本地CPU/synthetic检查当N1 CUDA已通过。所有提交session已返回；GPU代码/规则冻结。后台`pfbs`监测15分钟，仅首次正式验收、失败/必需行动、完成时通知；正常推进静默，固定批完整收尾后删除，不追加研究。
+
+### 91.2 无GT清单完成；真实singleton探针等待资源（2026-10-22 北京时间00:03核实）
+
+inventory3765586已COMPLETED0:0、10分38秒，实际所有H accepted mask/index/owner/source trace核验完成，确认163图、476候选实例及120361 selected-patch行；该阶段只读已有H/RLI候选、mask/owner和源PNG内容SHA，并核对正式hard-center索引；未读取真实GT或原图token，未运行GMP/SAM3/MLP检索，也未生成新预测。technical3765587仍PENDING，squeue明确原因Resources，其余afterok等待。这不是技术失败，也尚未验证N1数值路径；不能提前给出可分性或GPU通过结论。监测继续本固定ledger，不改变资源/参数或重复提交。
+
+登记账本与manifest SHA已再次只读核对并保存plan/launch_receipts/版本/registered_001.json；手册上一同步SHA为`3cbb6deab19d72a081869dbb5e46ec6c37cec62fa369c132d026a8ed745cea3d`，本段后另存新同步proof。当前只剩一个有界本地只读watch（不修改任务），所有上传/注册/调度mutation session已返回。后续按work_state_001.json及实际Slurm更新，不套旧T4/RLI状态。
+
+解释补注：MIXED是既非FG_PURE又非BG_PURE的注册分组，可能包含几乎纯其它前景类别的wrong-FG，不可把其全部比例直接当作几何上FG/BG混合程度。AUPRC随机参照取决于纯FG样本比例，可由各seed n_FG/n_BG得到；0.5不是统一AP零假设。两点不改变任何冻结指标、分组或决策规则。
+
+
+### 91.3 首次技术启动失败与纯调度显式恢复（2026-10-22 北京时间11:03）
+
+用户查询状态后实际SSH核：inventory3765586已成功；technical3765587 FAILED1:0/6:49，异常FileNotFoundError configs/cls_voc21.txt，发生在分类器import。冻结CODE中的该文件实际存在且SHA20b951be30c19d2c558164baee2b524dc8d5047736dd9380f78b4b373617f9fa匹配manifest；原Slurm入口未cd到CODE导致相对路径失效。没有进入真实singleton GMP、全量证据或本批GT，30集群测试即使经过也不能当N1技术通过；没有最终可分性结论。
+
+严格核原worker已退出、无lock、全部冻结code与输入anchor/已完成inventory SHA一致后，取消仅本批原未启动evidence3765588；原analyze3765589已CANCELLED，旧依赖均零计算。保留原technical/attempt_001/failure.json，SHA=a7f99eac18db68888ac9a75daceaf959f0a148b44211e72947c82659571c9d7c；保留原账本jobs_original_attempt_001 SHA=c17e44bda5412573a112194bfab73e7f0adf3e512b21f4f1b8e0175807866581。外层恢复preflight SHA=a8aafdf2e8affde8c979c5b10f3502827911a04ac88f21ef5f3e6f7085a168cd。未修改运行快照、科学参数、manifest或binding，未重跑inventory。
+
+纯调度一次显式同版resume已成功提交：technical3768931（原CLI --resume创建attempt_002）、evidence3768932 array0-3%4、analyze3768933（debug8CPU23000M2h）；技术到证据到分析全afterok。每个新job设置--chdir=冻结CODE；audit外层technical wrapper仅原冻结sbatch末尾追加--resume。当前analyze提交没有QOS后备；初次资源拒绝历史仍保留。不得重复scheduling_recovery/resume/upload/prepare/sbatch。当前ledger保留scheduling_history/原failure和preflight，guard与resume完成proof已存在，具体SHA与新Slurm状态在plan/launch_receipts/版本/scheduling_resume_001.json。
+
+独立外层审计002已准备上传，保留001，最终local_control audit按scheduling_history选择002；核当前7成功科学child，严格单列原FAILED及零秒CANCELLED与精确failure SHA，只允许该已知历史失败，无新failure/锁；不伪造旧成功、不提前审核或重复科学计算。监测pfbs的app状态实际PAUSED，本次保持PAUSED；Slurm链独立继续，不自动恢复通知。用户状态询问不解释为恢复监测授权。
+
+
+### 91.4 恢复后的真实singleton技术及正式启动验收（2026-10-22 北京时间11:08）
+
+technical3768931 COMPLETED0:0、1分53秒，30目标集群测试无skip；首两真实H图2007_000529/2007_000636×三seed完整H baseline label/21类score/margin回归、全部selected singleton正式GMP、首至多8个整token索引与singleton slice正式GMP bitwise/finite/L2/Cholesky/residual检查通过，背景id0可用，未读GT/未新SAM3/未生成预测，技术输出按同binding正式复用。report SHA=796b35dee1b93769a59a3b0be730d3c407e8b45a7bd5a680cd2d535920725b57。技术torch.cuda.max_memory_allocated峰值88.1279296875MiB，真实GPFS余232037089280字节；这是探针技术证据，不是120361行全量可分性或方法有效性结论。
+
+四evidence worker各progress>=2后独立外层startup_validation唯一执行passed/formal_start_reported=true，SHA=cee1d295b2ec55699f16359970a2b9937745c1ff3ce72383560a04a8009344ee；核实际精确Slurm子任务/PID/proc冻结命令/单卡UUID及末份FP32 GMP与各seed21类score、源token SHA引用/无GT。完成worker走真实complete+sacct分支不伪造存活。两份小proof原字节已下载逐SHA到plan/launch_receipts/版本/exact_startup_proofs_20261022。当前快照进度41+30+30+30=131/163有H extra图，之后以真实Slurm/progress为准；analyze当时依赖等待，未给最终可分性。正式启动仅通知一次，禁止重复startup/注册或恢复提交。监测PAUSED保持，科学afterok链独立继续。
+
+
+91.4阶段补记（2026-10-22 北京时间11:11）：四evidence child均COMPLETED0:0（3:01/3:49/3:46/3:46），163图全量证据计算已完成；analyze3768933已RUNNING1:28，无新failure。当前尚待GT后验统计/2000共享图片bootstrap/图示及独立验收归档，不能将N1技术支持当最终FEASIBILITY。所有GMP/检索/证据已完成，不再启动该部分。
+
+
+### 91.5 最终独立验收、七问结论与归档（2026-10-22）
+
+**FEASIBILITY_NOT_SUPPORTED。** 当前注册的singleton正式GMP→原MLP/库局部证据没有满足“higher=正确candidate前景”的三seed正向连续/二分类条件；不执行Foreground–Background Evidence Refinement，不事后翻号或换阈值继续。该结论不是对所有SAM3局部特征或所有precision方法的不可能性证明。
+
+七个当前科学child均COMPLETED0:0：inventory3765586 10:38，恢复technical3768931 1:53，evidence3768932四child 3:01/3:49/3:46/3:46（实际child3768938/3768939/3768940/3768932），analyze3768933 5:13。120361 selected行/476模型候选/163支持图的证据、GT composition、2000共享图片bootstrap和四组80图全部完成。所有本批证据在GT前commit，SHA=`2d843a854625396381639786f50def291e3d939dfe82a18717a37fc4e016e25e`；GT读取163张支持图一次、图示使用保存preview，bootstrap总体仍原1449图片。没有新SAM3、训练/库/crop、预测mask或mIoU。
+
+独立只读审核3769152 COMPLETED0:0、40秒；外层verify_completion_002保留001，严格验证原技术失败与零秒取消历史而不删除或伪装成功。completion_acceptance_001 SHA=`405fa41a899068b5d460999d84ad2658914a6f99f7da7df8c835f912d63a351d`；summary SHA=`5d61f18b04353541828a7c1aeb66a54b989c8ee995a02fac477d39d417544496`。核当前7成功child、完整证据行身份/FP32分数/原模型库字节SHA、score推导/GT composition守恒、保存draws/replicates区间/固定decision和图示内容身份。审核没有GT/旧token/模型tensor解码，没有GMP/检索/评分或bootstrap重算。原technical3765587 FAILED1:0/6:49、failure SHA a7f99eac18db68888ac9a75daceaf959f0a148b44211e72947c82659571c9d7c与旧依赖CANCELLED零秒单独保留。
+
+1–3. 可分性、最佳指标与seed方向：c−BG是预注册主指标，也是三seed描述性AUROC最高的local指标，但三seed rho均负、AUROC均低于0.5。其rho区间均跨0、AUROC区间均跨0.5，不宣称已证明显著反向分离。
+
+| seed | rho | 图片95%区间 | AUROC | 图片95%区间 | AUPRC | FG纯组比例 |
+|---|---:|---|---:|---|---:|---:|
+| 42 | -0.046233 | [-0.186547,0.122379] | 0.472850 | [0.389246,0.575191] | 0.454170 | 0.469159 |
+| 123 | -0.078787 | [-0.213498,0.086709] | 0.454087 | [0.371398,0.550292] | 0.496937 | 0.524826 |
+| 2026 | -0.103782 | [-0.210110,0.029326] | 0.438385 | [0.370508,0.517332] | 0.558756 | 0.599398 |
+
+c−BG三seed等权macro rho=-0.076267、样本SD=0.028857、图片95%区间[-0.180227,0.057483]；AUROC=0.455107、样本SD=0.017255、图片区间[0.389995,0.534097]；AUPRC=0.503288。score_c和candidate-class margin的macro AUROC分别0.416310/0.416239，macro rho分别−0.142623/−0.142212，也未满足正向条件。AP随机参照依赖纯FG比例，不是统一0.5；score不是概率。
+
+4. 与RLI比较：保留原single-removal gain原方向，另用预注册negative score/margin gain作为higher=FG的有利对照。严格相同join行中，c−BG相对negative score gain的配对AUROC差42/123/2026为−0.033960/−0.044361/−0.052063，相对negative margin gain为−0.024903/−0.029964/−0.060776。六个主指标配对图片区间全部跨0且点估计全负；没有优于两对照的支持。原RLI未重算，也未用旧patch_influence_GT作推理输入。
+
+5. MIXED分母：Cell72∩候选最终H owner，排除NO_OWNER和NO_VALID后，42/123/2026分别10827/14794/13238有效owner行；其中FG_PURE4944/7526/7761，BG_PURE5594/6814/5187，MIXED289/454/290（2.6693%/3.0688%/2.1907%）。selected总数33641/45509/41211中无owner18645/24999/22660、无valid4169/5716/5313，不把这些当背景。MIXED可含纯wrong-FG，不能全部归因于空间FG/BG混合；低MIXED也不证明72×72足以像素精修。
+
+6. 原因边界：三个seed均未触发singleton数值退化；raw平均pairwise距离²约1.49–1.51、投影总方差0.828–0.861、21score总方差1.289–1.315，top1熵约2.29–2.32nats。真实N1/原H完整I baseline回归通过，background id0和21类分数可用，不能以“数值表示崩溃”或“BG分数缺失”解释。区域训练的MLP/库用于singleton时的粒度/校准不匹配，是相容解释而非已因果定位；不能据此断言feature完全没有局部语义能力、空间分辨率是唯一原因或任一替代方法一定有效。20类/候选confidence三分位/固定novelty5bin的完整输出保留；样本不足的类AUROC/AP为unavailable，不据此调类阈值。
+
+图片bootstrap以1449完整图ID共享重采样，保留图内全部候选/patch、按精确频数处理ties；主表所用区间2000有限rep。这是已查看VOC开发数据上固定模型条件区间，不是独立test或训练seed不确定性；三注册指标的描述性排名不是独立多重显著性证据。没有事后翻号改score、挑seed或扫描阈值。
+
+7. Recommended Next Step：停止当前72×72 singleton-GMP→原MLP/库patch-carving路线，保留已验收H，不执行真正Foreground–Background Patch Refinement；其它precision证据只可另获授权后研究。没有新mIoU，不更新最高记录配方。
+
+小结果已逐SHA下载105文件（25小结果含visual index、80诊断图，共10774397字节）到`experiments/hpc_results/patch_fb_separability_20261021_234500/verified_20261022`。三张大patch表留HPC签名产物，未下载token/model或批量原预测。download_verification SHA=`f9e77be9346ccede37c1bc7bc19b7521404487de241a3e19c3b8025ffabb6a8f`。真实查看四组各第一张五面板，GT均最后：high-correct马seed123 c−BG≈+1.382、low-correct同马候选seed2026≈−1.224；high-background people seed2026≈+1.354且GT纯BG；low-background ship seed42≈−1.281且GT纯BG。cell/owner交集在缩略显示中很小，QA只证明抽查四张实际反例与布局/文字存在，不外推80图或总体频率。
+
+独立七问analysis_report SHA=`43c75fa8b312357853a874c236fe50bccefd878078c30c42b56b0c9390a8df14`；visual_QA SHA=`b90d4a4c3f6cc57f5eb9940e6381f59d1d678910a4ac51914ddb2e378446591f`。分析/QA/downloadproof已回传当前run逐远端SHA核；local_archive_001 SHA=`aae573a567fc4e3829305280285328b33f50e2cd2a5c99172537ef940352d96b`。原正式summary/metrics/CSV、冻结code和旧失败不覆盖，不读取GT/重bootstrap。
+
+科学整体Slurm墙钟41165秒（11:26:05，2026-10-21 23:47:33至2026-10-22 11:13:38北京时间），包含资源等待与隔夜恢复，不累加四worker并行时长。恢复链11:02:43至11:13:38为655秒（10:55）；独立审核40秒另列。最大保存torch峰值为technical88.1279296875MiB，四evidence worker各45.763671875MiB，这是实际allocated tensor峰值，非整GPU资源申请量。原analyze首次QOS拒绝及CUDA隐藏GPU配额历史保留；恢复analyze与审核实际debug CPU。固定批已验收归档完成，暂停中的pfbs监测在本次最终结果通知时删除，不追加实验/训练/部署/GitHub/打包。
+
+FEASIBILITY_NOT_SUPPORTED
+Recommended Next Step：停止当前路线，保留H；不执行refinement或新增研究。
+
+
+## 92. SMCF-v1：SAM3 Spatial Mask Confidence Feasibility Diagnostic（2026-10-22，独立可用性审核阶段）
+
+用户新附件原文保存于experiments/plans/sam3_spatial_confidence_v1/request.md。只诊断已验收SMC H新增candidate最终owner像素中的原生SAM3空间置信度，不做refinement/新预测/mIoU，不恢复T4/RLI/PFBS，不训练或改H/生产。首先审计当前SAM3及H实际代码/缓存，正式实验和GT分析尚未注册。
+
+实际只读来源核：H源manifest429b6851462b6e5ae0dd2908076de90ad36ec1fed6eb3be9c3c94dd47bd3b5c1、独立accepta2baf41d085901be7086cb65a968ef17bfe60fdeb85d27cbe2735f357f64845c。H为476 seed-candidate实例、185唯一candidate ID、163图。仅用已验收no-GT H roster定位原SMC来源，未读RLI influence或PFBS结果。真实H crop查询NPZ抽查字段及冻结producer显示仅保存native/mapped二值mask、scalar score/类别及原区域特征/检索字段，未保存dense logit/probability。
+
+代码语义：冻结tools/experimental_rgr_adaptive.py::decode_crop读取proposer._ground的output[pred_masks]；mask predictor为MLP与pixel embedding点积，未经sigmoid。原H完整20类5桶、1008 FP32、正常presence；按crop原生尺寸F.interpolate bilinear align_corners=False，再sigmoid一次、概率>0.5，整数crop粘贴回原图，原area/NMS/hash/cap。generic Sam3Processor字段masks_logits赋值前已sigmoid，不能被名字误导为原生logit。实际shape/dtype/range和二值重现仍需真实GPU探针。
+
+独立availability版本smcf_availability_20261022_114000，audit根experiments/hpc_launch_audits/该版本；从已验收SMC快照逐SHA复制247文件，两个新增capture/probe文件逐SHA核，代码/输入已冻结。唯一GPU探针3769673（v100g32单GPU4CPU24G30min）已实际提交；固定10唯一H candidate/10图、每view5个，10原crop forward加首crop一次确定性重放，共计划11forward。核完整历史crop pool的ID/score/source class/native/mapped binary和SHA精确，保存真正pred_masks及原resize后的logit/概率；不以IoU近似放行。尚未宣称真实10候选通过或空间可分。状态入口availability_control.py status/download，严禁重复prepare/submit或修改运行快照。通过后先下载spatial_evidence_audit.md/json及technical_reproduction_probe.json逐SHA，再实施固定三seed全owner诊断。
+
+
+### 92.1 Availability通过、正式固定批注册与启动验收（2026-10-22）
+
+availability3769673已COMPLETED0:0、4:10。10唯一H候选/10原crop、两view各5个、首crop额外一次repeat，共11真实forward。完整历史pool的IDs/score/sourceclass/native和mapped二值/hash精确，repeat的native/crop logit/probability逐值一致。实际pred_masks FP32[4,200,288,288]，所测原生范围[-47.69086837768555,16.4572811126709]，峰值5433.92529296875MiB。spatial_evidence_audit SHA=19e3e90115be1708245c8ad35b424d1e1e670618a04734e5d8e7344223dfa807，technical probe SHA=5cbd76a4aa3b18ca43493ceb3da92f12dadac98c071c799bf6625b2c1d91fd31；已原字节下载逐SHA。只证明合法dense evidence与精确重现，不是FG/BG可分结果。
+
+正式版本smcf_20261022_121000，run=experiments/sam3_spatial_confidence_v1/版本，cache=storage/diagnostics/sam3_spatial_confidence_v1/版本，audit=experiments/hpc_launch_audits/版本。从可用性快照249文件逐SHA复制并核14新文件；manifest SHA=452dd727ed95516c7b2592bd4b6cd704cd618c7c60e20e94cfd56756ef61f59b，binding=8f9b58fa1c7c2cc59abef8ddfc6dfea1566e75b28a8bea29bf48f03a444b08e0。当前audit/jobs.json实际inventory3770037、evidence3770038 array0-3%4、analyze3770039全afterok。analyze原debug QOSMaxSubmitJobPerUserLimit且无ID后唯一v100g32 1GPU资源配额6CPU24G2h、CUDA隐藏CPU后备；不当方法失败，也不说零GPU分配。不要重复prepare/submit/register_recovery/sbatch或修改冻结科学code。
+
+首次外层注册在生成manifest/JobID前因误写历史质量表extra_pixel_quality.csv而停止；0正式计算。原script/registration_001.guard留存；prepare_submit_002仅改指向实际extra_pixel_quality_H.csv（SHA=e1a18f05375bcfb5fb613306eaa5d01317e73bb6d4575de636dcfd631a5d643c），保留registration_path_recovery_001，不改冻结科学code或参数、不重复availability probe。正式分析只在本批evidence commit后解析该历史GT统计用于整数零容差H owner核对。
+
+inventory3770037 COMPLETED0:0、1:53，23目标CPU检查无skip：包含精确weighted-ties/image multiplicity、完整合成commit先于mockGT一次→2000bootstrap→数值checkpoint→80图示尾部，不代表实际可分性。直接H源核出476 seed-candidate实例、185唯一candidate、163图、180所需唯一历史crop和1574885实际owner像素行。区别PFBS selected-cell人口；本批不读原图token/GMP/MLP或bank。只为missing accepted target恢复原crop，probe合法复用，实际新增forward在commit逐一记录，180不是新增forward断言，11 probe含repeat。
+
+正式startup_validation已passed/formal_start_reported=true，SHA=25dbbda78695aa82bb6c8f579e67ff497410bedcf1b43a6dd27f7c203099639f，小proof已原字节下载核SHA；四worker Slurm精确子任务/proc/PID/GPU UUID、FP32 logit/probability/owner无GT证据通过，完成worker走complete+sacct不假造存活。可缓存复用的首图不冒称新SAM3 forward。首次启动已通知一次。最近shard0/1/2 COMPLETED0:0（3:27/3:24/3:26），实际child3770088/3770089/3770090；shard3实际root3770038仍RUNNING（progress2/40，c2v100m2-18，PID2156453），无failure，未称全量完成；以实际新日志为准。
+
+固定证据raw resized logit primary、sigmoid一次probability secondary；完整binary mask8邻域边界中心内部距离/max作几何control，非owner边界。全pixel CSV/NPZ/SHA先commit再GT；H四类owner计数对历史_H.csv逐整数零容差。2000共享原1449图片bootstrap，pixel-pooled与image-macro均报，AP对positive prevalence；class最少1000correct+1000BG，view/size/novelty/GT-quality/boundary固定分层只分析。支持条件与inner-bin替代规则已在protocol/plan/代码冻结，不能事后调threshold/反号/挑view。source prompt class可能不同于冻结H预测class，不能把mask membership当语义类别概率。
+
+数值/composition checkpoint先于80图；后段失败只允许新报告/CPU统计版本复用保存数值与preview，不重跑完整GT/bootstrap/SAM3。最终唯一Slurm独立audit核7科学child（availability1+inventory1+evidence4+analyze1），不GT图/token/modeltensor解码或推理/统计重算；controller verification非independent acceptance。local_control.py inspect/audit/audit-status/download/sync-manual；已有audit job/guard只audit-status，不重复verify。
+
+当前smcf监测ACTIVE每15分钟，仅固定批后续完成/失败/必需行动通知，正常健康推进静默，首次启动不重复。完成独立验收后仅小结果/必要图逐SHA下载到experiments/hpc_results/版本/verified_20261022，大pixel表/NPZ留HPC；外层analyze_verified.py十问具体分析、真实图QA、archive_verified.py回传proof并核SHA，再更新本节/同步，最终删除监测。SUPPORTED也只建议另授权refinement，绝不执行。原PFBS已完整结束且monitor删除，不恢复。
+
+
+### 92.2 最终独立验收、十问结论与归档（2026-10-22）
+
+**FEASIBILITY_NOT_SUPPORTED。** 冻结higher=SAM3 mask confidence方向未满足三seed稳定正向分离与超出boundary control的注册条件。停止当前H内部按空间置信度减像素的refinement路线，不扫描阈值、不翻号继续，不生成refined mask/新预测/新mIoU；保留既有H及最高记录配方。该结论限于当前H新增owner人口和冻结路径，不能推出所有SAM3 confidence均无信息。
+
+全部7个科学child COMPLETED0:0：availability3769673 4:10；inventory3770037 1:53；evidence3770038的实际child3770088/3770089/3770090/3770038分别3:27/3:24/3:26/5:40；analyze3770039 4:52。inventory目标23CPU测试无skip；真实availability精确历史重放及单次repeat独立通过。完整476 seed-candidate实例、185唯一candidate、163支持图、1574885 owner行、2000共享图片bootstrap和4×20图全部完成。
+
+实际180个需要的历史唯一crop box；availability11forward（10原crop+首crop一次repeat），正式170新增forward，复用probe10个候选，共181实际forward。没有新增位置/尺度、原图SAM3、token/GMP/MLP/检索或训练。只读恢复原H dense map，全pool ID/score/source prompt class/native/mapped binary/hash精确。所有pixel evidence先content-SHA commit再本批GT，commit SHA=05fd6701fbf29f2048894be09489390e0b7710db299f8de9c259656f0d11eb61；163支持图GT各解码一次，图示使用保存preview，visual_GT_rereads=0。四类owner计数逐整数对历史H表完全一致。
+
+独立只读审核3770248 COMPLETED0:0、1:08，completion_acceptance_001 status=passed，SHA=cfb09d2dcad8e1b7630036d3e6a8848e92ff481cf7d4f29ec1c369050ea3164a。核7科学child、来源/冻结code/vendor/checkpoint字节SHA、全部证据/映射/H owner/GT composition守恒、保存draws和replicates/区间/decision/图示。没有GT图/token/modeltensor解码，没有推理、GMP、检索或bootstrap重算；controller completion_verification不替代独立accept。正式summary SHA=02e066547e520070fe577e6ac403f298209b3dedce280135b8294dbba2d75040。
+
+1–2. 合法证据与历史对应：真正output[pred_masks]为sigmoid前FP32 decoder输出，按原H bilinear align_corners=False映射再sigmoid一次；processor内同名masks_logits实际已是概率，未重复sigmoid。10候选两view均覆盖并精确重现，首crop dense repeat逐值一致；正式所有target继续严格对应，未以IoU近似放行。mask membership不是冻结H语义类别正确率，source prompt class与H预测class可不同。
+
+3–5. 完整像素池主指标与图片等权口径同时披露，不能选择更好口径或改变分数方向。
+
+| seed | pooled AUROC | 共享图片95%区间 | image-macro AUROC | image-macro区间 | AUPRC | correct比例 | Cliff delta |
+|---|---:|---|---:|---|---:|---:|---:|
+| 42 | 0.251412 | [0.092171,0.522566] | 0.573497 | [0.434622,0.718047] | 0.315178 | 0.427748 | -0.497175 |
+| 123 | 0.278835 | [0.135547,0.497675] | 0.597182 | [0.459822,0.738047] | 0.385956 | 0.500186 | -0.442329 |
+| 2026 | 0.294578 | [0.145566,0.504947] | 0.623838 | [0.488524,0.760048] | 0.459128 | 0.579795 | -0.410845 |
+
+三seed等权macro pooled AUROC=0.274942、样本SD=0.021845、图片95%区间[0.130998,0.490177]；AUPRC=0.386754。image-macro跨seed均值0.598173、样本SD0.025185，但三个seed区间均跨0.5，且低于各自boundary image-macro 0.615545/0.645453/0.667993。pooled与image-macro差异涉及图片权重及跨图分数比较，不能把任一种解释为所有单图都反向/都有效，也不能将pooled反向点估计转成事后翻号删像素策略。AP参照依赖correct比例，不是统一0.5。
+
+6. 几何control为完整历史mapped candidate binary的8邻域边界中心归一化内部距离，不是owner边界。
+
+| seed | boundary pooled AUROC | SAM3减boundary | 配对共享图片95%区间 |
+|---|---:|---:|---|
+| 42 | 0.299137 | -0.047725 | [-0.155456,0.106895] |
+| 123 | 0.373791 | -0.094955 | [-0.233528,0.103175] |
+| 2026 | 0.389815 | -0.095237 | [-0.241723,0.081990] |
+
+三seed配对差均负，区间均跨0；未建立超出几何control的额外正向分离，也未证明decoder显著更差。proposal scalar只对跨candidate valid precision做Spearman；42/123/2026分别0.504280/0.519460/0.513361，未广播做candidate内空间ROC。
+
+7. 固定边界四层均未满足同一层三seed正向稳定条件，stable_inner_bins为空、stable_outer_bin=false、scope=LOCALIZATION_UNRESOLVED。不能称仅边界已有效或内部随机。8. correct-vs-wrongFG AUROC为0.144257/0.625405/0.166364，方向不稳；wrongFG和ignore始终独立于BG FP。
+
+9. 类别/尺寸/新颖度只作GT事后描述，不反向gate：table AUROC0.035518/0.046838/0.035518，pottedplant0.022046/0.047947/0.019230，sofa0.260712/0.209258/0.379052；chair0.878297/0.752187/0.785069，但只有1503 correct像素且不是另注册类策略证据；people0.434863/0.455846/0.460282。尺寸与novelty弱组具体见十问analysis和原CSV；不足1000correct+1000BG类保持unavailable，不调类别阈值。两个source view和固定GT质量组均保留。
+
+退化检查未触发：candidate-owner raw-logit std中位数1.021825，degenerate=false。这是可用但未支持当前注册用途，不是由于missing evidence/数值常量而INCONCLUSIVE。2000重采样以原1449 image ID共享multinomial、整图内owner保留、精确频数ties/ROC/AP，无pixel bootstrap/跨seed iid池化。区间限于已查看VOC开发集固定模型，不代替独立test或训练seed不确定性；3个seed改变H owner人口，非3个SAM3训练。
+
+10. Recommended Next Step：停止当前H内部基于SAM3 dense confidence的减像素路线，不执行confidence refinement mIoU实验或阈值扫描。若将来另获授权，可研究proposal接受/组合或其它证据；本批不实施。
+
+验收小结果逐SHA下载115文件（含80图、visual index及小表/proof），共9834545字节，到experiments/hpc_results/smcf_20261022_121000/verified_20261022；全pixel CSV/NPZ留HPC，未下载原token/model或大量预测。真实抽查4组各首张7面板，GT最后栏，fixed0..1 probability旁列raw logit；只检查4/80，不外推总体。high-BG pottedplant raw13.539688仍为BG，low-correct sofa raw约0.0000015仍正确，均为事后极端案例而非阈值建议。
+
+download_verification.json SHA=c5fcdca8be02fdd0657a623e4d8880c9cc73bf8c52360ceb69a68fec481c491e。
+analysis_report.md SHA=31f0aa22ae7d5d6ec114c408c48eb8e15d22bb8ce638b7b0939101d3ae783d01。
+visual_QA_001.json SHA=45290b09dac937e701cf83415f9a83613eddc888eabd934e339890e1831593df。
+local_archive_001.json SHA=1a2cf74a4061d2ebed7f8ba2e7e7da2b5246354428f176b89773cc6680c9ba45。
+
+analysis/downloadproof/QA及local_archive已回传当前run逐远端SHA核，不覆盖原指标/code/失败历史，不GT/统计重算。十问完整解释见上述analysis_report.md；正式JSON/CSV、2000draws和replicates仍按原manifest签名保留。
+
+总体科学Slurm墙钟2693秒（44:53），2026-10-22北京时间11:42:27至12:27:20，包含等待，不累加4worker并行。独立审核1:08另列。availability实际allocated tensor峰值5433.925293MiB；四evidence峰值5428.608398/5432.746094/5429.582031/5434.279297MiB，总最大5434.279297MiB，非GPU申请量。analyze因原debug明确QOS无JobID拒绝唯一GPU资源配额/CUDA隐藏CPU后备，历史保留。首次外层注册路径_H后缀纠正发生manifest/JobID前、零计算；本批无科学计算失败。
+
+固定批已完整验收归档；本节同步HPC核SHA后删除smcf监测，不追加任何实验、GitHub发布、部署或打包。
+
+FEASIBILITY_NOT_SUPPORTED
+Recommended Next Step：停止当前H内部空间置信度减像素路线；保留H，不执行refinement。
+
+
+## 93. Robust Residual GMP / Huber IRLS：RTX6000独立实验准备（2026-10-22，尚未运行）
+
+用户新附件明确授权在RTX6000重跑Robust Residual GMP，原文保存于`experiments/plans/robust_residual_gmp_v1/request.md`，固定机制/停止规则见同目录plan.md和protocol.json。该方法不等同第49节旧robust_huber（覆盖率×余弦残差责任）；不把旧结果当本批基线或本方法实测。
+
+已新增独立`tools/experimental_robust_gmp.py`与`tools/robust_gmp_mechanism.py`、对应两个test模块；未修改src/configs/生产入口/旧库或旧指标。算法沿用原hard-center与nearest fallback，普通GMP未归一化解初始化，最终仅一次L2，rho=.1；固定lambda=.1*原始未加权二阶矩trace，w/N而非w/sum(w)，MAD=1.4826*median(abs(r-median(r)))+1e-6，w_min=.05。只delta1/1.5/2与T3/5，primary1.5/T3。FP32更小primal/dual Cholesky、正规方程残差<=1e-4；原production无solver fallback，故失败直接停止，不加pinv。内部autocast关闭，目标启动还须TF32/BF16关闭。
+
+附件标准化Huber目标与显式IRLS方程存在尺度/1/2系数差异，且MAD每轮重估、权重下限裁剪；本实现严格执行附件显式IRLS更新和固定ridge，不额外乘scale改正则。只称adaptive-scale IRLS估计过程，不声称在最小化一项固定标准化目标或已获得收敛证明。
+
+机制预注册：从真实目标host已验收过滤成员及原fit split中抽500前景区域，每类25、原mask面积三分位9/8/8；SHA排序，保留实际身份。要求同图mask外中心token足够无放回注入30%，不够者预先列明，不足固定类/tier配额即停，不偷偷缩量或截断大N。污染0/5/10/20/30%以ceil(r*Nclean)追加、保留原token，固定PCG64嵌套前缀，同时报最终占比；不称mask外token已知GT背景。duplication固定随机10%原selected行，总重数2/4/8，不引入新方向。全部delta/T原样报告drift分布、class/size/N分组、每token权重/残差/scale、solver、仪器化runtime mean/p50/p90/p99及GMP倍率。
+
+gate：10%或20%至少一个ratio整体mean drift严格改善、至少11/20类非负且至少2类严格正；x4 mean robust漂移<=GMP+.005；零数值失败/零fallback。T3/T5所有成对描述符最小cos>.999才用T3，否则T5；通过的delta按1.5→1→2固定优先顺序，仅内部机制选择。无通过即complete_mechanism_failed、VOC NOT RUN，不扩delta/rho/loss/次数。正式A/B只在gate通过后继续准备：同成员/过滤身份/内部split、重新计算robust raw并训练匹配1280-512-256 MLP三seed42/123/2026，clean/HCR各1449、原GMP配对基线和center等实际设置显式绑定，不能复用普通GMP MLP冒充robust正式结果或按VOC选参。
+
+当前实际只读资源检查：通过已固定nativeSSH/SCP连接hpc.chinahpc.com:1014，sinfo只列v100、v100g32、v100m3与debug，没有RTX6000资源；当前用户queue为空。没有RTX6000的SSH目标/端口或项目位置，已向用户请求连接标识；不能推断旧RTX服务器当前地址、数据与部署，也不会以V100代替。**未上传、未提交JobID、未运行机制/训练/VOC或取得新指标。** 不创建无目标的自动监测。
+
+本地绝对Python语法检查通过，6项非Torch采样/注入/gate/统计协议测试通过；本地缺Torch，不能声称真实Cholesky/CUDA已验证。另10项数值/几何/目标CUDA回归已写入，但必须在实际RTX6000上执行，目标共16项无skip才继续。work_state_001.json记录未启动状态和当前代码SHA；实际目标核验后再冻结新版本/源缓存身份、准备fit-only选中token小缓存和真实小probe，绝不启动其它旧实验。当前文件仍为本地准备版，不是集群已冻结运行快照。
+
+### 93.1 用户明确目标为自有RTX6000服务器；认证阻塞（2026-10-22）
+
+用户回复“rtx6000就是我自己的服务器，不是集群那个”。根据本手册原服务器记录及本机TEMP/moduseg_full_control旧连接器，仅只读查得目标zystu2025@183.175.12.79:9470，历史工程/data/home/zystu2025/nd/1010-main、Python/data/home/zystu2025/.conda/envs/moduseg_sam3/bin/python。不能把旧路径或旧双卡清单冒充当前核验。
+
+当前实际nativeSSH一次StrictHostKeyChecking/BatchMode只读连接返回exit1、Permission denied (publickey,password)，没有执行远端hostname/GPU命令，没有上传/写远端/提交作业。旧连接器使用交互getpass，不保存密码；本地没有它的存活控制进程。没有读取、打印或上传密码/私钥内容，没有自动接受新主机密钥，没有用HPC密钥冒充个人服务器认证，也没有转去V100运行。
+
+已请求恢复本机SSH认证或提供可用私钥本地路径（不要求发送密码/私钥内容）。独立personal_server_control.py inspect [--identity LOCAL_KEY_PATH]已准备，只读取目标hostname、GPU型号/UUID/显存/进程、历史项目目录及环境是否存在；使用nativeSSH已有known_hosts严格核主机，不执行实验或连接HPC。work_state/protocol现为blocked_personal_RTX6000_server_authentication、jobs_submitted为空。认证恢复后继续实际源缓存/显卡占用预检和机制批，不自动恢复任何旧实验。
+
+### 93.2 自有RTX6000连接恢复、真实16项回归及固定机制准备（2026-10-22）
+
+用户本回合明确提供个人服务器当前账号与项目位置并授权连接。认证仅通过本地getpass无回显输入进入SSH客户端内存，未写入脚本、命令行、manifest、自动监测提示或实验产物。复用known_hosts并RejectPolicy核主机；不将个人服务器凭据用于HPC。当前真实host=shuxsu，项目/data/home/zystu2025/nd/1010-main、Python/data/home/zystu2025/.conda/envs/moduseg_sam3/bin/python。两张Quadro RTX6000各24576MiB，检查时GPU0用6MiB/GPU1用16MiB、利用率均0、无GPU计算进程；/data余1864413188096字节。实际使用物理GPU1，UUID GPU-edaba350-ba5c-6883-a48f-8e5e9a0c680a；不使用V100、Slurm或GPU0。
+
+只读确认原responsibility来源manifest SHA=9e1ec16a480fdbc27f3c3d9fe64761fd53608f18a22519b54be3bc7256aa87af；原过滤成员34880、原MLP train_images8466/validation_images2116、50epoch/MLP2 v1。该manifest用于索引原GMP token/伪标签/成员/原区域向量，不引用旧robust_huber权重或其质量作为新方法。机制只从原train_images取前景，不读内部query/VOC GT。
+
+首准备版本robust_gmp_20261022_154000在创建run/数值测试/token读取前发现手录训练报告SHA多一个字符而停止，原audit/code/prepare_001.log/launch guard保留。实际报告与原manifest中已签名source_records完全一致；新的准备实现直接核该记录，未降低校验容差。该错误不是方法质量失败，也未进行GMP/IRLS或GT计算。
+
+当前有效独立版本robust_gmp_20261022_154500，audit=experiments/robust_gmp_launch_audits/版本，code=该audit/code，run=experiments/版本，selected小缓存=storage/robust_gmp_mechanism/版本。279个原fresh不可变源码逐SHA拷贝、8个本批新增/计划文件上传SHA精确核验；不改root生产源码/configs及旧数据。真实prepare PID283276已脱离SSH，GPU1可见；目标16项测试于Quadro RTX6000通过、无skip，3.037秒，包括10项数值/几何/CUDA检查及6协议检查，不再以本地无Torch测试代替。当前正在读取原fit伪标签固定500区域及482支持图片的选中token缓存，原full-image token仅实际消费时核SHA，不全工程或12031token预扫描。此时尚未宣称500区域机制或全VOC完成。
+
+外层唯一continuation supervisor PID283326已脱离SSH，只有prepare进程退出且完整mechanism_manifest存在后，才独立检查目标GPU1/UUID/显存占用并启动固定机制worker；guard/launch ledger存在不重复启动。机制完成后自动运行一次只读CPU独立verify_mechanism_001，不解码原token/模型或读取GT，不重做GMP。若机制FAIL，complete_mechanism_failed/VOC NOT RUN即停；PASS仅授权继续另版匹配raw/三seed新MLP/clean-HCR正式A/B，不准按VOC调delta。所有PID与实际进度以status_001.py和各自小日志/complete/failure为准；前述PID283276是准备而非正式机制worker。
+
+### 93.3 固定500区域正式机制启动验收（2026-10-22）
+
+prepare283276已结束，482支持图选中缓存完成；mechanism_manifest SHA=6aae031bc89e9cf32ed63408cefd3f7720061bd514e85f22380eae68fd3fd9f9，binding=b5709401686d2492ad969ef0388ea7ab07a515976805dde56904cd824e97d49e。正式worker PID283333存活，/proc命令指向本版冻结mechanism入口与manifest，CUDA_VISIBLE_DEVICES=1、UUID为GPU-edaba350-ba5c-6883-a48f-8e5e9a0c680a；GPU0保持空闲。500区域、20类各25、3delta×2T×8condition固定不变。
+
+独立外层startup_validation_001 status=passed/formal_start_reported=true，SHA=f2e68c37ef149058f40145b093c4ecbad0c9576e897ff74e9fd2e86a1bf69574。实际核前两完成区域各48行及144个weights/before/after数组、FP32有限、源产物SHA；数值入口逐区域普通GMP对历史原1280向量allclose1e-6先通过后才执行扰动，不能称全部像素bitwise或全500已验收。目标16测试proof SHA=acef6cd8155fdb4069f0618fd86aba38a3273fb6fd3ea26375bca40ade9d36f6。manifest及4个小proof已下载到plan/launch_receipts/本版本，local_proof_verification_001核SHA。最新只读快照351/500区域，尚未最终gate或VOC结论。
+
+首次正式启动已通知，不重复startup/重提任务。审计尚未启动前审阅发现内存class键为int、JSON磁盘键为str；外层审计统一JSON后比较gate，原审计草稿另存preexecution_draft及audit_preexecution_revision_001，科学快照/结果未修改，不是科学失败。audit guard存在后绝不修改该审计实现或重复启动。
+
+### 93.4 机制完成验收、全量接口测试修正及平台转移（2026-10-23）
+
+第93.3节为历史运行快照。实际固定500前景区域、20类各25、482支持图已全部完成；24000 region/config/condition行、12000个T3/T5配对cosine、4000条扰动记录和500份逐token权重/前后残差数组均保留。目标16项RTX6000回归无skip。独立accept status=passed，SHA=f00baf0c1d75af6833a57853c96cad391188573430d5939036b9d2f2b89215df；机制complete SHA=41412f8be8c91f2c6d80ce8c189d49a4000a5429a9353fbb03f46809d1f32e5a。
+
+Mechanism gate PASS，按原优先序固定delta=1.5、IRLS T=5；所有T3/T5最小cosine=0.9975086451，未超过0.999，故不能选T3。10%污染mean drift由GMP0.017289879降至robust0.003363534；20%由0.034809248降至0.010030748。duplication x4由0.002193673变为0.003376580，excess+0.001182907在注册+0.005界内。区域/condition等权weight mean0.5044767711、p10均值0.3005965988、fraction<0.5均值0.5537055909；完整分布/类别/尺寸/N/成本在独立analysis及原JSON中，不能把上述稳定性当VOC提升。
+
+机制audit001真实失败保留：FP32 mean相对min最大低7.45058e-9，307行，非solver失败或真实权重越界。仅外层verify_mechanism_002将min<=mean改为min-1e-7<=mean，并用独立guard002；没有改科学快照、权重、gate或重跑机制。原001 code/log/guard/exit以及更早preexecution草稿全部保留。
+
+条件full版本robust_gmp_ab_20261022_163000已注册，manifest SHA=f5a68e7cbeda413c37db10a9e662d04b858d331935b35a084cc48bbfd5cd5eae，binding=8c73ce066dc6c5f6e5b01c6fc71f7cfc223bff5a28250d2ba32b770912b7c90b。三目标接口测试2过1error：合成32行两类的生产短训练/导出/严格reload已完成，随后测试误要求旧两层MLP的可选architecture.num_layers字段，KeyError。生产FeatureAdapter为兼容旧签名有意省略该字段，load_adapter默认2层。没有真实全量raw提取、三seed正式训练、预测或GT评分。旧冻结代码/log/manifest不改。
+
+独立恢复版robust_gmp_ab_recover_20261023_023500只修测试默认2及实际Linear1280->512->256断言；科学IRLS和完整A/B核心字节保持不变。旧292文件逐SHA核，288文件原字节复制，4份测试/注册/计划文件版本化更新；两个外层调度/独立验收脚本单独保存。恢复manifest SHA=acce0815f75725690859d68e4c94f47a3a338d96109c593729f96a88cc0cb2ff，binding=c13c200873084098476fae4c3397a1934275d831e7700bacb4a6dedd7212208e5。注册核所有21类原成员34880/含10569BG/顺序/split，native两来源向量FP32外L2舍入<=1e-6并逐类记录，不冒称字节相同。最终center固定0.2；训练内部原选epoch center0.4保留。seed42原pair.historical_metrics为center0.4，禁止误用；本批seed42绑定原fresh center0.2的globalCM（逐图历史不可用如实null），123/2026绑定各center0.2逐图矩阵。
+
+个人服务器两张RTX6000当时均被其它ActiveSAM项目占用约9GiB、util约96–100%。唯一外层等待进程PID293176曾登记，尚未进入任何目标测试/真实提取；不干预其它进程、没有切GPU0或V100。用户随后明确“用集群跑也行”，已在本版audit写stop_requested，实际supervisor退出、/proc/293176不存在、run仅manifest且无scientific launch。queue状态字段stopped_failure_or_user_pause来自通用调度器，本次实际原因是平台转移，非方法质量失败或用户取消整个实验；该个人版本不自动恢复。
+
+当前继续核验HPC原同批缓存、模型/库和资源，以另版Slurm执行授权的固定三seed完整A/B；尚未宣称集群已提交或已有VOC结果。已完成机制不重跑，不跨平台混比，迁移必须核输入/原mask/sampleID/原库/模型/源路径映射的字节身份；新设备小probe须真实通过。个人等待队列已停，禁止两边并发重复运行。
+
+机制15份小结果及恢复版小proof已下载到experiments/hpc_results/robust_gmp_20261022_154500/verified_20261023，download_catalog_002与download_verification_001逐文件SHA通过。三大逐token/原token/模型未下载。初catalog001的队列状态是可变路径，保留该目录记录；catalog002改用独立不可变queue_snapshot_for_download_001后再下载核SHA。没有自动打包/发布/部署。
+
+### 93.5 用户允许集群；只读迁移预检（2026-10-23，尚未提交）
+
+用户明确“用集群跑也行”，撤销本批仅RTX6000的设备限制，准许另版Slurm/V100完成条件full A/B；不因此变更delta1.5/T5、成员、split、配方或VOC后停止规则。个人等待队列已停且不会自动恢复。当前没有HPC新JobID或新full推理/训练；机制RTX6000实测保留其设备边界，不能改写成V100机制测试。
+
+SSH ED25519固定指纹及publickey认证已成功，简单远端命令亦存在分钟级等待，部分只读诊断60秒超时；不能误报认证丢失或计算已失败。首个只读cluster_preflight_001最终正常返回：当前zhengyuan squeue为空，v100/v100g32/v100m3 up。个人原gmp_responsibility_20261013_164316、centroid02_paired_20261013_204924及fresh_tuning路径在HPC同名位置不存在，故禁止仅字符串替换root复用个人manifest后直接启动。真实HPC来源需经已验收r3_paired_20261016_142200、context_relational_20261018_121800和oracle_guided_bridge导入索引定位后做成员/原mask/token/原模型与库身份映射；不扫全工程或12031 token。
+
+首quota探针误用filesystem gpfs1，明确返回“File system gpfs1 is not known”，没有用df冒充通过。正确入口/usr/lpp/mmfs/bin/mmlsquota -g 项目实际group data，后续inventory002读取该配额。现有TEMP旧context_relational source manifest仅供查路径提示，实际源仍须在HPC核SHA；不能把本地缓存当当前证据。第二个只读cluster_source_inventory_002正在读取正式R3/model/pool索引及正确quota，没有注册/提交行为。
+
+已创建robust-gmp延续监测，每30分钟继续固定批迁移/运行/验收收尾，正常等待静默，不重复已存在的提交。个人旧连接session95149仅作小证明/源元数据获取；不重启已停queue或干预ActiveSAM。所有科学实现变更另版冻结并做目标小probe；已有JobID/guard绝不重提。最终无论VOC提升、持平或下降，独立验收/小结果归档/一次完整通知后删除监测，不追加研究。
+
+### 93.6 HPC同源核验、不可变全量版与实际Slurm提交（2026-10-23）
+
+当前有效full版本robust_gmp_cluster_20261023_030000，audit=experiments/hpc_launch_audits/版本，code=该audit/code，run=experiments/版本，raw/cache/projected/weights/predictions均独立版本目录。cluster_plan.md、cluster_protocol.json为本阶段计划；旧个人full_plan/protocol作为历史保留。源oracle_r3_context_recover_20261016_113700的397源码逐SHA复制，11新增科学/测试/计划文件及外层控制/导入共21上传逐SHA通过；核心IRLS和原完整A/B模块字节不变，新增cluster适配器只处理已签名HPC路径/输入布局及Slurm阶段。9个原production核心文件逐字节相同，不修改root src/configs/正式入口。
+
+source manifest链已实际核验：context_relational_20261018_121800 SHA8737afdd7f0a887f03345cb9d0e51a0e089d50469171078d25e6fe7b28a8f579；r3_paired_20261016_142200 SHAfe3b9fd63b10ac5aa9f728fa4bbb76515e8630adb20d5c321012f8ce4e90c100；原pool manifest SHAde989140dac7138124a99c2d127b67da80c55c5bd6e5cb4373dee6f00b4a36bc；models source SHA88d4fafdaf84fb43b779e05f440e375499976a128ef19b417fd1caad35c09b7a。34880成员/类/顺序、train10582/val1449列表和signature完全相同；内部8466/2116 split已对原个人training_report逐ID一致。10582 pseudo PNG（含既有35fallback）SHA全部匹配；12031 token记录的original_reference_token_sha256全部匹配个人原文件引用。该项是来源元数据链接，**不宣称全跨设备token数组bitwise**；既有HPC缓存cluster_mainline_baseline_20261014_175149的实际NPZ/receipt SHA及FP32 geometry在消费时核，真实probe另存canonical数组SHA和GMP对原向量maxabs/bitwise。没有重做token/SAM3/伪标签或扫描全数组。
+
+三seed原adapter实际SHA匹配个人原模型；各seed原projected bank24文件的相对路径集合及SHA元数据也全部一致，额外native_banks_migration_identity_001保留本地。注册在HPC核源模型/库实际字节，未读取model tensor。原raw库源/成员和production签名绑定不变。native HCR历史必须使用r3_paired对应seed的B_commit与seed_B_per_image矩阵/metrics.results[seed].methods.B（center0.2）；不能使用margin原reference中心0.4，更不能将R3结果当GMP baseline。
+
+新manifest SHA=c69c54cd47dac1edffccf3d82f167ec0f29b5351a000dfa5508b6c40c697cbfa，binding=f5b86243563f09ed13e021c5b536a5405437c366bcf4beb7dc17ed1e8772f499。register rc0，真实group zhengyuan/data配额余229811978240字节。上传expected目录SHA=4cb71f0f4eecac9b7c0f79d819aeb71d5b09b713c77f8c0ba2d4e38bf1684382。manifest/注册/配额/实际jobs/upload/source-clone/submission小凭据已下载plan/launch_receipts/本版本，不代表full指标或技术验收已完成。
+
+audit/jobs.json实际afterok链全成功提交：technical3779988（1V100）；extract3779989 array0-3%4；merge3779990；train_predict3779991 array0-2%3；evaluate3779992；独立audit3779993。每GPU一worker；三个seed各自完整新MLP/库/分数/预测，提取只共享geometry与1280D raw。merge优先debug8CPU23000M2h，audit优先debug4CPU10G2h；本次提交均无QOS后备发生。evaluate为1V100资源配额6CPU24G6h且CUDA隐藏，纯CPU评测，不能说零GPU资源分配。独立audit已afterok唯一提交，不能再调用verify或另交审计。预计10科学child及1审计child，按实际array子项核，不把parent压缩行误当单child完成。
+
+当前最后只读快照technical3779988 RUNNING、2:09、c2v100m2-2，其余正常依赖PENDING；真实19目标测试及2train/2query/6 native HCR像素回放尚待proof，未宣称通过或full正式startup。技术通过后复用本版probe cache进入4路提取；全部17388新预测PNG/12组SHA提交后才本批GT。IRLS1.5/T5、原BG/成员/split/50x100 CE+.5SupCon、最终center.2/训练内部center.4全部保持，禁新参数/新seed/R3/H/SMC附加及部署。
+
+cluster_status_remote_001.py只读本ledger/sacct/小log/complete/failure/lock。HPC持久控制session98948已REGISTER_RESULT0/SUBMIT_RESULT0/CONTROL_DONE；先前22510/10918均已返回。另一个只读SFTP诊断79841因冗余且等待被本地关闭，不影响注册、Slurm或主控制器，不当科学失败。用户暂停/取消仅安全停本ledger/监测，不动其它项目；科学失败先日志保留attempt，新代码新版本。完整结果/独立accept/小结果归档/手册同步后一次最终通知并删除robust-gmp。
+
+
+### 93.7 原GMP数值回放失败、独立两图诊断与新恢复版（2026-10-23）
+
+旧HPC版robust_gmp_cluster_20261023_030000的technical3779988实际FAILED1:0、29分58秒。19目标测试无skip已通过；真实首训练成员2007_000032_000000在原atol=rtol=1e-6比较失败。原code/manifest/日志/failure保留，failure SHA14521eead28553c992058da7fb1d5d6b13778c469e6b3ac2bfe6268786bc9ff1。只取消本ledger尚未运行的extract3779989、merge3779990、train_predict3779991、evaluate3779992、audit3779993，均CANCELLED0秒。没有完整train/query receipt或全量训练、预测、GT结果，不属于Robust质量失败；technical_failure_handling_001.json有实际sacct和字节证据。
+
+独立小输入诊断robust_gmp_input_probe_20261023_041000/3780319 COMPLETED0:0、84秒，冻结旧production求解器，只重放前两张原train图的7个原成员，未运行Robust聚合、训练、预测或GT。原1e-6 allclose有6/7通过，最大分量误差1.6093254089355469e-06、最大L2误差1.0153363291465212e-05，特征近同方向；保存每成员norm/area/support/pairwise cosine、两图canonical token数组SHA和独立向量NPZ。input_probe_001.json SHA4decc9ace64dbab9e016dacb94627c1679f43e7dd018cfe95aa2581425c9f2cb。这与跨平台FP32差异量级一致，但不能据此声称已证明误差原因或全token数组bitwise相同。
+
+新恢复版robust_gmp_cluster_replay_recover_20261023_043000仅修改数值验收和证据记录：联合要求maxabs<=1e-5、L2<=5e-5、float64 cosine>=1-1e-8；保存旧1e-6 allclose/bitwise标志和实际误差。原三seed×两query的6份native center.2 HCR历史PNG仍必须逐像素精确。此变化在全量提取和VOC之前注册，独立审计也核保存数值界及6次精确回放；不改变IRLS/GMP数学solver、hardcenter成员、数据/伪标签/旧模型库、三seed训练与最终推理。IRLS和完整A/B核心字节保持，408旧snapshot文件逐SHA克隆、7新文件补丁逐SHA核后冻结，新模型/缓存/预测均独立路径。第一次恢复草案042000因手抄诊断SHA多一个9在注册前assert停止，无manifest/JobID/科学计算；目录/code/log/guard保留。最终版通过读取真实本地文件SHA生成校验值，不覆盖历史。
+
+当前manifest SHAebf0fc74b2a5195a438b650448b6044f554b8c191154a93944d3a8f6f8bf9cb1，binding8705af4ae2688087b3d2874c1c793ed1a08ec61f56ffcae9b47f7de228458a09；注册rc0，GPFS真实余229286051840字节。实际jobs.json全afterok一次成功：technical3780328、extract3780329 array0-3%4、merge3780330、train_predict3780331 array0-2%3、evaluate3780332、independent audit3780333。未发生QOS后备；eval仍分配1V100配额但CUDA隐藏CPU计算。已排定audit，绝不另交或手动verify。最后技术3780328 RUNNING42秒/c2v100m2-2，其余依赖PENDING；本版19测试/真实probe尚未完成，未正式验收startup，更无mIoU结论。local launch_inputs_verified只证明输入和提交，不是独立完成验收。
+
+当前控制仍用已验证HPC持久session98948且最近请求CONTROL_DONE；只读状态脚本改为plan/cluster_status_remote_002.py。work_state及cluster_replay_recovery_plan_002.json为当前路由。个人等待queue继续停止，禁止重启机制/旧full；固定delta1.5/T5、rho.1、34880含10569BG、8466/2116 split、50x100原MLP训练、最终center.2/训练内部center.4不变。首次四extract真实进展/进程/GPU UUID/新FP32artifact与真实技术probe通过后才一次正式通知；完整12x1449预测SHA先提交后GT，最终accept/小结果归档/手册同步后停，不据VOC追加选择。
+
+
+### 93.8 HPC正式四路提取启动验收（2026-10-23）
+
+当前版本robust_gmp_cluster_replay_recover_20261023_043000未改manifest/binding或冻结源码。technical3780328现COMPLETED0:0、Slurm3分35秒（阶段execution wall87.0189769025892秒，GPU峰值101.0087890625MiB）。真实19目标测试无skip、2train/2query和三seed×两图native center.2 HCR历史PNG全部逐像素精确。technical_complete SHAe039cd8055bfc36f16391d1dc0a05a5fbac34ef992aee096acd81d30a7c623a5。7个train成员最大abs1.6093254089355469e-6、最大L2=1.0153363286405137e-5、最小float64cos=.9999999999484566，均满足本版联合界；旧1e-6 allclose仍6/7、bitwise0/7，不能称跨平台向量逐位复现。
+
+四路extract均已产生真实非pilot新FP32区域特征及内容SHA，唯一外层validate_startup_001.py已运行并passed/formal_start_reported=true。它核真实target proof、精确scontrol ArrayID_TaskID→actualJobID、各自Slurm overlap读取/proc命令/PID/manifest/phase/shard和真实nvidia-smi PID→GPU UUID；四个UUID不同，每worker一张V100。首两technical cache仅复用，未拿它们冒充正式新图。核验时四进程均真实RUNNING，没有使用事后存活假设。
+
+- shard0: exact 3780329_0 → actual JobID3780378，PID2972081，GPU-5bb108d5-111d-4533-7680-35b2cf6e3fb2，首新图2007_000121、FP32[2, 1280]，核验时progress=408。
+- shard1: exact 3780329_1 → actual JobID3780379，PID3998814，GPU-4ff49fbf-7a3a-39ff-e772-799e9c692a79，首新图2007_000170、FP32[7, 1280]，核验时progress=253。
+- shard2: exact 3780329_2 → actual JobID3780380，PID3998813，GPU-beff1853-430d-1aa3-0ae6-0844f6963fed，首新图2007_000063、FP32[3, 1280]，核验时progress=242。
+- shard3: exact 3780329_3 → actual JobID3780329，PID1262450，GPU-cb0e3b7c-fa64-4ed4-9a1c-fcc45f893c43，首新图2007_000068、FP32[2, 1280]，核验时progress=251。
+
+各首receipt绑定本版，sample IDs/classes/order对原成员精确；own raw NPZ均FP32[区域数,1280]、有限、L2 norm合格，逐文件SHA核验，原token引用及canonical arraySHA保存。未重做GMP/检索/GT。startup_validation_001.json SHA324d69cd2d876aa86b95122108d16b44ef04bcf09135eac618ce8f5659109e39，大小18124，已本地下载并用远端startup_download_catalog_001逐SHA核6个小文件（startup、technical、target tests、execution、两train_probe）。本地startup_download_verification_001.json留证明。
+
+这仅是正式启动验收，不是34880全量提取完成、MLP训练完成或segmentation改善/独立完成验收。固定delta1.5/T5与原参数继续；merge3780330、train_predict3780331、evaluate3780332、independent audit3780333按现有afterok链推进，不重复提交audit或手动verify。第一次正式启动通知本次发出，后续正常推进保持静默；完整预测SHA后本批GT，最后独立accept/小结果分析归档再通知最终结果并删除robust-gmp，不追加实验。
+
+
+### 93.9 科学计算完成，原独立审计超时（2026-10-23，未独立验收）
+
+本回合通过原持久控制器接收此前只读请求，真实sacct显示Robust恢复版全部10个科学child均COMPLETED0:0；三seed train_predict为57:00/1:04:58/1:04:58，evaluate13:28。原独立audit3780333为TIMEOUT、2:00:03，日志明确time limit。summary已生成，但尚无独立accept，不能称完整验收。保留原审计code/guard/log；只允许确认旧审计终止后另版外层审计恢复，不重跑训练/预测/GT/统计/GMP。原robust-gmp监测已记录此异常；其控制与新HPUD分开，不消费HPUD会话。
+
+### 93.10 独立审计超时后的外层恢复与Slurm过期ID修复（2026-10-23）
+
+科学10 child均已COMPLETED0:0，第93.9节原audit3780333为TIMEOUT/2:00:03，batch CANCELLED0:15、extern COMPLETED0:0，原allocation已终态，无任何科学任务要恢复/取消。原科学snapshot/manifest/参数/预测/CM/GT提交和001审计code/log/guard全部不改，不把已生成summary当独立accept。
+
+新外层cluster_audit_002.py以12h/6CPU24G/一V100资源配额、CUDA隐藏CPU审计，增加逐文件SHA进度以及单进程内按dev/ino/size/mtime/ctime的digest去重；新进程不信任旧checkpoint，不省略实际字节校验。唯一审计002 Job3786930真实FAILED1:0/48秒：其在独立guard/字节审计前调用squeue -j查询已过期的旧3780333，Slurm报Invalid job id specified。原002脚本、audit_job_002/authorization和日志保留，本地log SHA52b01b92644cc332d6a9e96b3792e785c8ee172be821bce3534440a587d9a49b；没有重做科学计算或将其视为质量失败。
+
+新的003外层只将队列查询改为完整本用户squeue -h -r -u zhengyuan再精确匹配旧JobID；真实只读probe成功，sacct确认001 TIMEOUT及002 FAILED且batch/extern全部终止。cluster_audit_003.py与submit_audit_recovery_003.py/audit_recovery_expected_003新文件逐SHA校验，实际audit_job_003.json唯一Job3786984提交成功；12h/6CPU24G/一V100配额且CUDA隐藏。注册manifest仍ebf0fc74b2a5195a438b650448b6044f554b8c191154a93944d3a8f6f8bf9cb1、binding8705af4ae2688087b3d2874c1c793ed1a08ec61f56ffcae9b47f7de228458a09，不改任何科学code/输入/成员/模型/库/统计。原verify_full_completion_001.py SHA cf9dd9569712380e6ca9059e4b16b1393ab80afcbce36f589e32b7c0892c917d，原cluster_audit_001.py SHA0a1559c42ebe417e02704e02136b3073b67480b35800f2b6ea382fd10b558fee均在新audit核字节。
+
+003只调整独立guard/accept输出版本、原既定B历史JSON布局和字节digest仪器化，原全部科学断言保留。各cache receipt/NPZ、模型/库文件字节及保存CM/CSV/IDs核查继续；不解码GT/旧token/model tensor，不重GMP/检索/训练/推理/bootstrap。checkpoint=byte_digests_003.jsonl和audit_progress_003.json，存在Job/guard仅查状态；不能重复submit或手动verify。最终以completion_acceptance_003.json status passed且该独立job COMPLETED0:0为准。随后小结果逐SHA下载、独立分析、原始机制与内部伪标签/VOC开发边界、权重/成本口径、归档与手册最终sync；正式完成通知后删除robust-gmp。HPUD已独立完成归档及删除hpud-v1，不重启、不混合两批结果。
+
+
+### 93.11 Robust固定三seed完整独立验收、负结果与最终归档（2026-10-23）
+
+有效full robust_gmp_cluster_replay_recover_20261023_043000的10科学child全COMPLETED0:0；最终独立audit003 Job3786984同为COMPLETED0:0，耗时1:18:48，于2026-10-23 18:57:07北京时间（凭据10:57:07.767153Z）通过。completion_acceptance_003.json SHAe85c50dc1283366ebb8be0c7f0add49d8a08ac816c32d3b72a9981ccd6f74444，binding8705af4ae2688087b3d2874c1c793ed1a08ec61f56ffcae9b47f7de228458a09，manifest仍ebf0fc74b2a5195a438b650448b6044f554b8c191154a93944d3a8f6f8bf9cb1。34880成员含10569BG、三seed匹配新MLP、17388新PNG/12逻辑组、12全局CM及17388逐图CM、21类IoU/FPFNwrongFG/chair↔sofa通过保存核验；原native HCR三seed全局与逐图历史CM精确。fresh bytes累计42133唯一文件/1440917854字节，原verifier自身seen30098是另一分母。
+
+正式固定delta1.5/T5结果（mean±sample SD，百分数，差为百分点）：clean GMP85.699896±.141559，Robust85.533168±.093836，差-.166728（paired delta SD.130864），seed42/123/2026差-.315506/-.115240/-.069439，0/3正；HCR GMP86.505997±.274697，Robust86.398415±.117504，差-.107582（paired delta SD.217220），逐seed-.345174/-.058410/+.080836，1/3正。不得只挑seed2026。clean/HCR chair均值IoU分别-1.990289/-1.909936pp、sofa-1.388195/-1.299942pp；HCR虽然BGFP平均-70698、FN-1570.333，wrongFG却+73965.667，sofa→chair+77885（像素数，非mIoU可加贡献）。瓶子等改善不抵消平均下降。
+
+内部fit-only gallery27939/query6941区域来自原8466fit/2116query图、无同图泄漏，伪标签top1三seed均下降，mean98.703357%→98.549681%；top5 mean同99.990395%，mean margin .642976→.630717。其为内部伪标签诊断，原epoch-selection center.4和正式center.2边界保持，不能当独立GT证据或用VOC重选模型。best epochs42:38/123:27/2026:28；原50×100 CE+.5SupCon配方不改。
+
+RTX500区域机制的污染稳定性改善与本HPC下游负结果明确分开。预注册delta1.5/T5的10%/20%污染drift分别.017289879→.003363534、.034809248→.010030748；x4 duplication实际.002193673→.003376580，仍在原+.005容许界。零追加clean权重mean .444727、fraction<.5 macro .638593，均500区域等权而非全量token分布；低weight不证明背景，adaptive MAD/ridge/clamp IRLS不构成固定Huber目标收敛证明。RTX同步仪器化runtime各4500call，按N-bin count加权GMP2.001848ms、Robust16.904912ms（8.4446倍），非纯kernel或V100全量逐region时间。
+
+有效full实际科学墙钟最早Slurm2026-10-23 04:07:21至11:44:50，7:37:29；含最后独立审核至18:57:07为14:49:46，四extract/三seed并行不累加。四extract allocation4:16:02–4:26:03；merge1:49:25；三个train_predict（包括训练/export/检索/两arm预测）57:00/1:04:58/1:04:58；evaluate13:28；audit0031:18:48。execution内时间另存resource_accounting_004，不能把allocation等同纯求解或纯训练。RTX机制小归档缺完整起止墙钟，记未测不以版本名推算。原失败版/探针各自历史保留，不混进有效科学墙钟。
+
+torch peak口径：RTX机制127.716797MiB；HPC各extract105.214844–105.850098MiB、train_predict各45.507324MiB、technical101.008789MiB，是各进程torch allocated峰值，不是驱动/整卡硬件峰值；CPU MaxRSS为Slurm采样task RSS，不能冒称GPU。evaluate/audit各有一V100资源配额、CUDA隐藏，merge为debug CPU。跨平台原GMP probe新注册联合界通过，但旧1e-6仍6/7、0/7bitwise；元数据原token SHA链接不代表全实际数组bitwise。同源成员/伪标签/原adapter/各24库/9核心字节证据保留，不能声称仅aggregation变化且全部逐位相同。
+
+延迟与失败全部保留：原个人num_layers合成接口错误、个人等待queue迁移退出、旧HPC030000真实1e-6回放失败/未启动依赖取消、input probe3780319、042000注册前抄SHA错误见93.4/93.7；本有效科学没有重跑。audit0013780333在2:00:03超时；audit0023786930因过期squeue JobID在48秒失败；audit003只修外层查询/校验仪器化并已通过。18:57完成后状态未及时回传，本次21:21才刷新，是控制/收尾跟进延迟，不能继续说科学任务在运行。
+
+70小结果共16210337字节已按audit/small_archive_catalog_004.json逐SHA下载至experiments/hpc_results/本版/verified_20261023；catalog SHAc706f75b2f2250295de09bc22c8c3c62e8488b6dd01d5bbb0055264b3766eaab，download_verification_004.json通过。包含summary/metrics、12逐图NPZ、6内部检索、3training_reports、phase_execution与必要proof；不下载模型/token/17388原PNG。独立analysis_report.md SHAcbceac1082d8d366f81d502d5a824c3337df1b938399a1556451ca614b717c87；local_archive_manifest_005.json SHA130684e2651946dc30c0ca29c546ed0b9fbe120fa9fbfbb348347f733aeedb38记录小文件及报告清单。analysis_numbers_005只对已保存小指标作报告级差值/mean/SD，不重GT/CM/统计推断或科学compute。报告、下载proof、local archive proof回run以archive_remote_verification_005逐SHA核，后者与manual_sync_005小proof下载保存。
+
+结论：本固定配置的机制鲁棒性未转为内部检索或VOC开发平均精度提升，保留原GMP，不替换主线，不按VOC加扫参数。独立验收及小归档完成，本固定批结束；一次最终结果通知后删除robust-gmp，仅停止本批监测，不影响独立PAF或其它实验，不恢复个人queue，不部署/GitHub/ZIP。
+
+
+## 94. H Proposal Utility Decomposition v1（HPUD，2026-10-23附件授权并实际提交）
+
+用户附件原文保存于experiments/plans/h_proposal_utility_v1/request.md，并明确“用集群跑”。本批是GT-after诊断，不是分割方法/新精度候选，不恢复T4/RLI/PFBS/SMCF或其它停止分支，不修改E/H或旧代码/旧预测。独立版本h_proposal_utility_20261023_153000，run=experiments/h_proposal_utility_v1/版本，冻结快照=experiments/hpc_launch_audits/版本/code，日志=logs/h_proposal_utility_v1/版本。
+
+固定三seed42/123/2026、全部476个实际写入H的accepted extra实例（154/163/159），163个支持图片；完整1449 image IDs参与基线回归与共享image bootstrap。源SMC manifest SHA429b6851462b6e5ae0dd2908076de90ad36ec1fed6eb3be9c3c94dd47bd3b5c1、独立accept SHAa2baf41d085901be7086cb65a968ef17bfe60fdeb85d27cbe2735f357f64845c均已在HPC真实核；E是第86节accepted single-view loose基线，不是strict R3 A。预检queue为空、quota余227725934592字节。
+
+新模块tools/h_proposal_utility_core.py、tools/analyze_h_proposal_utility.py只用NumPy/Pillow及标准库，不导入Torch/model/production inference，不解码原token或raw/MLP特征。新增SAM3/训练/检索/库/正式prediction均0。先锁定候选metadata、E/H PNG、源prediction/owner与mask池的内容SHA；只对H字段解码，原共享NPZ其它R/feature字段不参与分析。owner实际写入像素求和须逐候选及逐seed与旧TP/BGFP/wrongFG/ignore整数精确，且1449张E/H逐图矩阵精确，否则OWNER_ACCOUNTING_MISMATCH停止。整个GT pass结束、全量账目通过以后才正式计算utility；在RAM保留163张active GT供反事实，不二次读GT，GT-last图示仅复用<=280x210预览。
+
+单proposal DeltaRemove按全局H mIoU的实际owner-only BG移除，数值零仅abs(delta)<=1e-12 pp。逐candidate实际构造counterfactual并核整数CM transfer。两个联合Oracle（all harmful、TP=0且BGFP>0）均用原owner在RAM实际构造并重新算CM，不refill、不重新排序、不raster、不相加独立Delta；不导出新的正式prediction。这是指定GT Oracle潜力诊断，不是可实现方法，也不是已证明的全局最优拒绝子集。
+
+proposal_score/retrieval_score/margin预注册higher=beneficial；其它连续metadata只给原方向Spearman，类别/view/prompt ID不作有序证据，不翻号/拟合threshold或classifier。固定PCG64 seed42，完整1449图2000共享multinomial draws，每次保留图内所有candidate；full-data utility标签固定，区间仅描述固定H/模型及这些标签下的VOC开发图像不确定性，不是seed方差或独立test。每seed独立报告，macro不把三seed候选冒充独立重复。数值checkpoint先于图示；4组各请求20例，不足如实，GT最后栏。完整细则/预注册描述性三路线decision见plan.md/protocol.json。
+
+本地14项科学数值测试无skip通过，另以合成1449图CM/18实例走完2000bootstrap与54张实际可用合成面板尾部；这些不是集群实际476实例验收或质量结果。新快照8 code records、7上传文件逐SHA核后冻结，绝不运行中原地改code/参数。四role均CPU计算、CUDA隐藏，为避免debug两小时上限及GPFS校验延迟，每role申请v100g32一张GPU资源配额/6CPU24G/12h；不能称零GPU分配，但无GPU计算。
+
+实际新manifest SHA376535998d18c51237e3706e22b63ab63b6bbfc732c32ac666fc1a983484d248，binding=751a940288dae78c9bcfe4cb23502380db761417813005590560bdaf8b4c2bfb。唯一afterok链已成功提交：analyze 3785373, audit 3785374, inventory 3785371, technical 3785372。全部returncode0，无重复提交或QOS后备。manifest/ledger/配额/上传证明等7小文件已下载至plan/launch_receipts/版本，local_launch_verification_001核manifest SHA、binding、jobs及upload SHA；它仅是launch_inputs_verified，不是科学完成或独立accept。当前等待真实inventory及technical，未报告HPUD结果。
+
+已排定独立audit3785374，不能再提交audit或手动verify。只读CPU核3科学child成功、源/产物字节、保存CM/owner守恒/CSV/2000draw与replicate区间、Oracle非加性和GT-last图示，不读GT/token/model或重做bootstrap/推理。独立passed后小结果与必要图逐SHA下载、真实view_image抽查、独立九问分析/归档proof回传并远端核SHA，补手册最终结果/角色与整体墙钟（不累加并行）/归档SHA。只建议PROPOSAL_ACCEPTANCE_PROMISING、PROPOSAL_COMPOSITION_PROMISING或NEITHER_CLEAR及Recommended Next Step，绝不执行后续方法。固定批收尾一次结果通知后删除HPUD监测。
+
+
+### 94.1 HPUD全量完成、独立验收与小结果归档（2026-10-23）
+
+第94节提交状态已成为历史。inventory3785371、technical3785372、analyze3785373及独立audit3785374现均COMPLETED0:0。集群14目标测试无skip、首两真实productive图owner/mask/metadata重复检查通过；technical_report SHA3c3316ed8094014f566a7e7226cd9dead7c893944025175d2b17138bfe376382。完整476实例/163支持图片、1449基线图及2000共享image bootstrap和80例+6统计图全部完成。source_history_linkage_001另外逐SHA对齐旧已验收SMC本地归档中的all_predictions_committed/per-imageCM/metrics/两owner质量CSV，源commit仍2007cf45fd137399aa83e7db8b9054dd60e9c515c97bb64523ffbcb67c145ac4。无SAM3/检索/训练/新库/新正式prediction，无H或mainline修改。
+
+GT仅在本批candidate_metadata_no_gt及owner/mask原内容SHA commit后读取，1449张每seed E/H矩阵和全部candidate/seed owner整数与旧历史精确；本批GT只完整读取一次，active163图GT暂存RAM支持后验actual counterfactual，图示仅小preview缓存、GT最后栏。owner_accounting passed；单DeltaRemove不相加，两个joint Oracle均实际构造原owner-only BG移除raster并算CM，无refill/reorder/reraster、无production PNG。
+
+|seed|total|beneficial|harmful|neutral|harmful BGFP share|harmful TP share|harmful zero-TP fraction|
+|---|---:|---:|---:|---:|---:|---:|---:|
+|42|154|48|86|20|99.701694%|0.982535%|88.372093%|
+|123|163|52|86|25|99.739350%|0.595935%|88.372093%|
+|2026|159|53|82|24|99.607279%|0.585473%|87.804878%|
+
+有害candidate并非极少（约52–56%），但GT排序top20% harmful（约全部candidate的11%）承担全部H-extra BGFP的82.04/84.41/85.36%，TP份额仅0.0583/0.0354/0.0348%。harmful约88% TP=0，约12%同时有TP和BGFP；harmful median valid precision均0、precision>.5数量均0，各seed整体拒绝harmful仅损失1263 correct owner pixels。不能把zero-TP视为普适语义垃圾或把GT排序当可部署top-k规则。
+
+|seed|H mIoU %|GT_ORACLE_REJECT_HARMFUL %|gain pp|GT_ORACLE_ZERO_TP_REJECT %|gain pp|
+|---|---:|---:|---:|---:|---:|
+|42|87.182390018|87.351144454|0.168754436|87.325887883|0.143497865|
+|123|86.848879400|87.061261776|0.212382376|87.037123366|0.188243967|
+|2026|86.803830185|86.967824124|0.163993939|86.942878265|0.139048081|
+
+原H mean=86.945033201%，指定joint Oracle mean=87.126743451%，mean gain=0.181710250 pp，原共享图片95% macro CI=[0.11460011886831485, 0.2699655382854042]；zero-TP mean gain=0.156929971 pp，CI=[0.09503157693088286, 0.2379572246476382]，均2000有限replicate。是GT ORACLE DIAGNOSTIC，不是新方法精度/全局最优拒绝子集/独立因果贡献，不更新R3最高记录。
+
+proposal score AUROC42/123/2026=0.758236/0.768784/0.760469，retrieval score=0.752422/0.718470/0.721353；margin=0.591570/0.567979/0.564887。三者点方向一致，但margin三seed95%图片区间都跨.5，仅弱信号；proposal score区间下界分别.661243/.679983/.666364，2000有限rep。自然higher=beneficial、不GT翻号；其它连续metadata只原方向Spearman、nominal类/view不作有序支持。AUPRC须对照beneficial prevalence。Harmful的center/H maxIoU均值均低于beneficial，overlap count差异小且有混杂；不支持简单“大重叠冲突集中于harmful”解释。TP主要由sofa贡献，整体AUROC不证明每类内部普适，不做类别/view/size gate。
+
+正式描述性结论=PROPOSAL_ACCEPTANCE_PROMISING；Recommended Next Step: Proposal Acceptance Feasibility v1（仅建议、需另行授权，未执行）。VOC是已看开发数据；shared1449-image draws保留图内全candidate、固定full-data utility labels，模型seed独立报告后macro，不混池、不当training-seed方差或独立test。
+
+Slurm角色耗时inventory937s/technical119s/analyze816s/audit743s。科学整体最早start至最晚scientific end=1872s（31:12），含独立审计至最晚Slurm end=2615s（43:35）；均取时间范围，不累加并行，准备/下载/人工解读归档另记proof时间戳。资源每role6CPU24G/1V100配额、CUDA隐藏、GPU compute0；.batch MaxRSS原记录={"3785371.batch": "71840K", "3785372.batch": "2724K", "3785373.batch": "751436K", "3785374.batch": "58256K"}，为Slurm采样CPU驻留内存，不是GPU峰值。GPU memory peak UNMEASURED。
+
+独立accept SHA8993ff2f122711d218a1dfeeb07cf742e260036dfb85ba26b961d3526b026a1e；summary SHA38a9407f6805650701c7a698f0335b343ade5e3f1bcf7c9e1749027785fabd49；analysis_report SHAe3eb77e037535267f284d21fa64762536c6c25e570a6e635d5de97a699770751；visual_QA SHA2ca3ac91dcc004c46f6bf879c1e2b2a9c7d92892346c68a717397c9e0dff2881。passed后123小结果/矩阵/CSV/replicate/必要图在experiments/hpc_results/h_proposal_utility_20261023_153000/verified_20261023逐SHA通过；真实view_image抽查harmful/beneficial/near-neutral/random各1张，6面板GT最后，tiny owner需结合caption，None precision为UNAVAILABLE。
+
+独立analysis_report.md、download_verification.json及visual_QA_001.json已SCP回run/local_archive_001并逐远端SHA核验，archive proof SHA4d82975656a5f5ab7ff41264210e68bf3afd813cbbec57f9f31c50c7490e8435，remote_archive_verification_001 status remote_bytes_verified。未下载大token/model/原预测，未重GT/bootstrap/推理，不改正式指标。固定批到此停止，只保留建议不执行后续acceptance/composition；最终文档远端核SHA和一次完成通知后删除hpud-v1监测，不删除Robust监测。
+
+
+## 95. Proposal Acceptance Feasibility v1（PAF，2026-10-23附件授权并实际提交）
+
+用户附件原文保存在experiments/plans/proposal_acceptance_v1/request.md，并明确继续PAF-v1。本批第一次允许无GT proposal acceptance的新正式prediction与完整三seed VOC val评测，独立于已完成HPUD及Robust GMP；不修改E/H历史、source model/bank、原生产入口或已授权最高记录R3。版本proposal_acceptance_20261023_203000，run=experiments/proposal_acceptance_v1/版本，storage=storage/proposal_acceptance_v1/版本，audit=experiments/hpc_launch_audits/版本，冻结code=audit/code，logs=logs/proposal_acceptance_v1/版本/%A_%a.out。
+
+源为HPUD已独立验收的同一476个productive H candidate-model实例：42/123/2026各154/163/159、163支持图片，完整1449原始image IDs；源HPUD manifest SHA376535998d18c51237e3706e22b63ab63b6bbfc732c32ac666fc1a983484d248、独立accept SHA8993ff2f122711d218a1dfeeb07cf742e260036dfb85ba26b961d3526b026a1e在HPC实际核过。只读其no-GT metadata与已签名SMC H mask/score/class/order/owner来源，不将HPUD harmful/TP标签作为selection输入，不重新激活历史skipped/NMS/loose gate未通过候选。
+
+STRICT阈值来源已真实通过注册硬gate：独立验收SMC manifest SHA429b6851462b6e5ae0dd2908076de90ad36ec1fed6eb3be9c3c94dd47bd3b5c1在2026-10-21T04:52:52.690535+00:00创建，早于HPUD的2026-10-23T07:51:03.805633+00:00，绑定tools/oracle_guided_r.py SHA90dc80fe59ee7666be1b2217966fa24d624aa0cbe82000a6a5e9d9fdee974668。其RULES及strict_background_rescue实际q>=.4/r>=.95/m>=.1/novel>=.1，不是按HPUD GT新选cutoff。threshold_provenance.json/provenance_thresholds.json都保存来源与签名。历史H loose gate实际q.4/r.9/m.05/novel.1、FP32 .8r+.2q order、semanticNMS>.7及原hash资格保持，静态strict只恢复既有r/m门槛；saved FP32转Python float比较与历史一致，不加epsilon。
+
+五个预注册arm：STRICT、PROP-MATCH、RETRIEVAL-MATCH、CONSENSUS-MATCH、RANDOM-MATCH。每image+seed先以STRICT静态q/r/m决定K，在runtime novel gate之前冻结。PROP按q降序/ID升序前K；RETRIEVAL按r降序/margin降序/ID升序；CONSENSUS为q/r各自ordinal rank（同score按ID升序），worst rank/mean rank升序，再margin降序/ID升序；RANDOM按完整SHA256 UTF8 image:decimal_seed:candidate_id:paf_random_match_v1升序一次固定布局。所有保留集合统一按历史H accepted顺序从E重新raster，只填live BG且novel>=.1，允许later surviving refill，但不激活历史非productive候选。类别/view/owner/GT均不是accept特征，不改E已有FG。
+
+独立新模块tools/proposal_acceptance_core.py、tools/experimental_proposal_acceptance.py及tests/test_proposal_acceptance.py，使用原HPUD只读来源/IO helper的冻结字节；NumPy/Pillow/标准库，不导入模型/production推理，不解码旧token/raw/projected特征。新增SAM3/encoder/GMP/retrieval/训练/bank rebuild均0。已在本地通过18科学数值测试无skip，并用完全合成1449-image CM完成15比较×2000共享bootstrap与90实际合成六面板图示尾部；这些不是集群H回归、正式PAF预测或真实质量证据。
+
+上传11文件（包含2外层文件及expected JSON）和2个新空init，12条expected upload逐SHA通过；冻结科学code_records为10文件。新manifest SHAc4f314bfe160910e852bdd54e98589302d6b3c2cb12072897500895421bc9500，binding7cd4b1dce134c5cdd9991930539e9d48d853625a62e9ecc2657b87ad741cf560，预检mmlsquota zhengyuan/data实际余227643670528字节，非df。唯一afterok链全部成功提交：inventory3788059 -> technical3788060 -> predict3788061 -> evaluate3788062 -> independent audit3788063。每role为v100g32一GPU资源配额/6CPU24G/12h、CUDA隐藏CPU计算，不能称零GPU分配；无新QOS后备。9份小注册/ledger/阈值来源/配额/上传证明已下载至plan/launch_receipts/版本，local_launch_verification_001逐SHA核manifest、binding、10 code records和实际JobID；它仅launch_inputs_verified，不是完成accept。
+
+technical在集群18目标无skip通过后，先全部1449×3 all-accept H重新raster，逐像素及owner与历史精确才进入PAF正式predict；仅保存163支持图productive mask union的无损packed cache与原owner。新5×3×1449=21735 PNG、全部wide candidate decisions、runtime/owner/refill/count SHA先提交，之后才本批唯一GT pass及HPUD保存GT label事后join。H像素完全相等在相同GT下保证旧mIoU不变，数值阶段还逐图核E/H原矩阵及87.182390018/86.848879400/86.803830185；若不符H_RERASTER_REGRESSION_FAILED停止，绝不改边界绕过。
+
+正式主比较STRICT-H：mean>0且>=2/3 seed正，不额外设CI显著gate。完整报告6方法全部15对比较（含预注册主要/次要以及consensus-vs单score）、逐seed/mean/sampleSD/方向，2000次PCG64 seed42完整1449 image共享multinomial draw与replicate，macro为各seed差值均值，不混池。其VOC开发条件图片区间不代替seed SD或独立test。排名支持采用同mean/方向描述规则同时胜H及RAND，不造新“明显”幅度cutoff，不按最高arm隐藏其它结果。A/B/C/D路由和增量flag规则在plan/protocol/core预先冻结。
+
+GT后拒绝集precision排除neutral分母、beneficial拒绝率/旧GT top20 harmful覆盖、zero-TP覆盖、潜在owner TP/BGFP/WrongFG与正式pixel deltas分开；refill逐class及正确FG/BGFP/wrongFG/ignore保存。21类IoU变化/最大正负类/leave-largest-positive-class-out20类敏感性与q/r rank四象限均只作解释，不加类别/view gate。HPUD原Oracle只读已保存结果，不重建新subset；actual gain>0才给recovery ratio，并披露PAF refill流不同于owner删除Oracle。
+
+GT composition和numeric checkpoint先于图示；请求20 STRICT helpful/20 harmful/20 PROP-over-STRICT/30 no-GT预先commit随机例，不足如实，6面板GT最后且复用一次GT pass的palette小preview，不为图重读GT。独立audit已Job3788063，已有Job/guard仅查状态不能重交/手动verify。其核4科学child C0、所有源/PNG/owner/trace/decision/count/random字节与保存21逻辑CM/CSV/interval/decision/GT-last，不读rawGT/token/model、不reraster/重生成bootstrap。controller proof不是independent acceptance。
+
+独立passed且audit COMPLETED0:0后小summary/CSV/CM/replicate/proof和必要图逐SHA下载，真实view_image抽查4组，再写附件11问独立analysis/归档proof回传远端核SHA，更新本节最终指标/失败/acceptSHA/角色和整体墙钟（最早start到最晚end，不累加并行）/实际峰值口径/归档SHA。固定批无论升平降到此停止，不阈值/权重/rank/类别/view/seed扫描、不训练classifier、不重生成proposal或部署/GitHub/ZIP。后续calibration或mainline adoption只建议不执行。失败保留attempt，只取消本ledger未开始依赖，科学修复新冻结版本+小真实probe，纯报告/审计修复新外层复用数字；用户暂停/取消立即停本批及监测、不自动恢复，不动Robust等其它批。
+
+### 95.1 PAF正式启动验收（2026-10-23 21:01北京时间快照）
+
+inventory3788059实际COMPLETED0:0/2:15；technical3788060实际COMPLETED0:0/11:11。正式h_reraster_regression.json已完整1449图×三seed=4347条pixel与owner精确一致、18目标测试无skip，163无损productive mask cache；未读GT或HPUD utility labels，不是仅300图pilot。PAF predict3788061随后实际运行，已用精确Slurm/scontrol/lock及本job overlap ps核PID4108811、c2v100m2-3、冻结entry/manifest/--phase predict；D状态不当退出。最近progress2026-10-23T13:01:06.071411Z为150/1449图、2250/21735真实新PNG。五arm×三seed首15张新uint8 PNG均[366,500]、合法0..20并保持E已有前景；只检查已保存图，不重raster/GT。
+
+新外层audit/startup_validation_001.json statuspassed，SHAac1f5cd5ac9b8e9ca786bbf28148ac3c5ec9126b1dcabf73b3b436a88133448d，11098字节；startup_download_catalog_001及H完整proof、两阶段complete共4小文件依catalog逐SHA下载核验，local_startup_verification_001保存在plan/launch_receipts/本版。此为正式启动验收，不是全批completion acceptance或新mIoU；formal_start_reported=true，首次启动已通知，正常推进不重复。eval3788062与独立audit3788063既有afterok链保持，不重复提交或手动verify。每CPU role仍占1V100资源配额，CUDA隐藏、GPU峰值UNMEASURED。科学code/signature/参数无改动。
+
+
+### 95.2 PAF-v1完整独立验收、固定阴性结论与归档（2026-10-23）
+
+本版proposal_acceptance_20261023_203000四科学role及独立audit全COMPLETED0:0：inventory3788059为2:15，technical3788060为11:11，predict3788061为19:28，evaluate3788062为11:02，audit3788063为14:16。独立completion_acceptance_001.json statuspassed，finished2026-10-23T13:37:02.672201Z（北京时间21:37:02），SHA02f940e4b51f9020e41ab853cd2fe8d74fc0fbe096dad57bb24d3c445da2b5be；binding7cd4b1dce134c5cdd9991930539e9d48d853625a62e9ecc2657b87ad741cf560，manifest仍c4f314bfe160910e852bdd54e98589302d6b3c2cb12072897500895421bc9500。完整H1449×3 pixel/owner及E/H历史CM精确，18test无skip，21735新PNG/15逻辑组、21保存CM组/30429逐图CM、2000共享bootstrap、476同预算无GT决策、35881源/结果字节SHA通过。原summary.md/completion_verification保留生成时pending措辞不覆盖，最终状态以单独accept及Slurm C0为准。
+
+最终Decision=ACCEPTANCE_NOT_SUPPORTED；Recommended Next Step=Stop this proposal acceptance implementation; no threshold rescue or additional run。CONSENSUS_ADDS_VALUE=False、RETRIEVAL_ADDS_VALUE=False。严格执行预注册mean>0且>=2/3 seed正，不额外加/减CI gate、不挑最高arm重命名；固定本批到此停止，不救阈值或追加classifier/类别/view/seed/参数/新SAM3/训练/库，不修改主线/部署/GitHub/ZIP。
+
+H三seed mIoU(42/123/2026)=87.182390018/86.848879400/86.803830185，mean±sampleSD=86.945033201±0.206787456%；STRICT=87.214074885/86.785592270/86.680780626，mean±SD=86.893482594±0.282543684%。STRICT−H逐seed差=[0.03168486702494988, -0.06328713005181896, -0.12304955852303578]pp，mean-0.051550607pp、paired sampleSD0.078032013，正seed1/3；共享图macro95%区间[-0.192619010,0.076972847]、finite2000。所有5arm与全部15对比较/逐seed方向/SD/CI均在小报告与原CSV保留，是固定模型VOC开发条件图区间，不是独立test或模型seed方差。
+
+各方法mean mIoU%：H=86.945033201; STRICT=86.893482594; PROP-MATCH=86.892016654; RETRIEVAL-MATCH=86.893482594; CONSENSUS-MATCH=86.893482594; RANDOM-MATCH=86.893341202。STRICT/RETRIEVAL/CONSENSUS全局指标相同，不能仅凭mIoU相同断言全部候选ID或每像素相同。CONS−PROP虽有mean+.001465939pp/3正，但未同时胜H和RAND达ranking support，不能强称Feature Bank增量成立。PROP−RAND mean-.001324548pp/0正，RET/CONS−RAND mean+.000141391pp但仅1正，均不支持排名替换；不额外设“明显”幅度阈值。
+
+STRICT各seed原/保留/拒绝/novelSkip/最终productive：[{"actual_productive_candidates": 81, "added_pixels": 133510, "input_H_extras": 154, "method": "STRICT", "runtime_novel_skip": 0, "seed": 42, "static_accepted": 81, "static_rejected": 73}, {"actual_productive_candidates": 84, "added_pixels": 161947, "input_H_extras": 163, "method": "STRICT", "runtime_novel_skip": 0, "seed": 123, "static_accepted": 84, "static_rejected": 79}, {"actual_productive_candidates": 79, "added_pixels": 162924, "input_H_extras": 159, "method": "STRICT", "runtime_novel_skip": 0, "seed": 2026, "static_accepted": 79, "static_rejected": 80}]。实际BGFP变化/正确FG损失（每seed各1449图，不是mIoU可加贡献）：[{"seed": 42, "BGFP_delta": -123490, "FN_delta": 79429, "WrongFG_delta": -4690, "correct_FG_lost": 74739, "correct_FG_gained": 0, "ignore_changed": 89318}, {"seed": 123, "BGFP_delta": -128530, "FN_delta": 174120, "WrongFG_delta": -10503, "correct_FG_lost": 163617, "correct_FG_gained": 0, "ignore_changed": 148176}, {"seed": 2026, "BGFP_delta": -71035, "FN_delta": 172251, "WrongFG_delta": -4729, "correct_FG_lost": 167522, "correct_FG_gained": 0, "ignore_changed": 130155}]。少BGFP也会丢有益FG，不能把静态拒绝都算收益；E辅助行lost/gained等占位0不用于本结论，五PAF arm为真实逐像素字段。
+
+仅0<K<N图-seed组提供排名可区分空间，已保存预算CSV统计：[{"seed": 42, "active_groups": 138, "zero_K": 62, "full_K": 70, "partial_K_groups": 6, "partial_K_candidate_instances": 12}, {"seed": 123, "active_groups": 146, "zero_K": 67, "full_K": 74, "partial_K_groups": 5, "partial_K_candidate_instances": 10}, {"seed": 2026, "active_groups": 142, "zero_K": 67, "full_K": 67, "partial_K_groups": 8, "partial_K_candidate_instances": 16}]。结论受本476原productive H universe限制，不证明所有proposal acceptance或retrieval普遍无效。later refill保留原full mask/H顺序，只填当前BG且不动E已有FG，不激活旧skipped；STRICT原owner目的地汇总：[{"seed": 42, "historical_owner_pixels": 292237, "remains_background": 292237, "refilled_by_later": 0, "refill_correct_FG": 0, "refill_BGFP": 0, "refill_WrongFG": 0, "refill_Ignore": 0}, {"seed": 123, "historical_owner_pixels": 450826, "remains_background": 450826, "refilled_by_later": 0, "refill_correct_FG": 0, "refill_BGFP": 0, "refill_WrongFG": 0, "refill_Ignore": 0}, {"seed": 2026, "historical_owner_pixels": 373441, "remains_background": 373441, "refilled_by_later": 0, "refill_correct_FG": 0, "refill_BGFP": 0, "refill_WrongFG": 0, "refill_Ignore": 0}]。拒绝潜在TP/BGFP/Wrong与最终重填误差分开保存。HPUD Oracle只读原结果，macro实际gain为负故回收率null；seed42的正增益比率.187757仅该seed，不能宣称整批回收成功。类别21IoU/最大正负类/去最大正类20类敏感性及q/r四象限仅事后解释，不加class/view gate。
+
+所有21735PNG/owner/decisions/runtime/refill先SHA commit，才一次完整1449 rawGT及HPUD标签事后join，GT_reads/authorization/preview proof保存。2000 PCG64seed42共享完整1449 image draw、各seed先加权CM后mIoU再macro，未重生成或重GT。图示实际组数：{"PROP_over_STRICT": {"availability_limited": true, "produced": 0, "requested": 20, "selection": "posthoc per-image mIoU difference extremes; not additive dataset contribution"}, "STRICT_harmful": {"availability_limited": false, "produced": 20, "requested": 20, "selection": "posthoc per-image mIoU difference extremes; not additive dataset contribution"}, "STRICT_helpful": {"availability_limited": false, "produced": 20, "requested": 20, "selection": "posthoc per-image mIoU difference extremes; not additive dataset contribution"}, "random": {"availability_limited": false, "produced": 30, "requested": 30, "selection": "no-GT precommitted SHA image:seed order"}}；PROP_over_STRICT无正例为0/20，按原shortage规则不虚构；最终共70张，已真实view_image抽查三个可用组各一张并核第4组不可用原因，完整QA归档。GT最后，随机30为无GT预commit，极值逐图IoU不可加为数据集贡献。
+
+资源与墙钟：science {"first_start_slurm": "2026-10-23T20:38:50", "last_end_slurm": "2026-10-23T21:22:46", "wall_seconds": 2636.0, "clock": "Slurm display timezone, consistently used; not assumed UTC"}；含独立audit整体 {"first_start_slurm": "2026-10-23T20:38:50", "last_end_slurm": "2026-10-23T21:37:02", "wall_seconds": 3492.0, "clock": "Slurm display timezone, consistently used; not assumed UTC"}。从最早start到最晚end，不叠加角色；Slurm allocation与应用phase wall分别保留。各role6CPU24G12h且1V100资源配额/CUDA隐藏CPU计算，GPU compute0、GPU peak UNMEASURED，不声称零GPU分配；CPU MaxRSS仅Slurm采样task RSS。无新QOS后备、无科学失败或重跑。startup/manual同步控制等待没有改冻结科学code。
+
+按audit/archive_catalog_001.json签名catalog下载115小结果（27025891字节，包括70图）及resource证明；catalog SHAf35cb0be20f841100f392c90aae5fb4cb30538e74a3838757629823698863fbb，download_verification_002逐文件SHA通过，目录experiments/hpc_results/本版/verified_20261023。包含summary/metrics/原21逐图CM/15pairCSV/2000draws+replicates/GT-after/refill/class/oracle/阈值/阶段proof，未下载大token/model或21735原预测PNG。独立analysis_report.md回答11问，SHA4c6bbf400d53b015c42ad99987070280ef439112978dc4ce34f6fe34054314a4；local_archive_manifest_003.json SHA7e222bd773eadb17417b122c89a5569e045b534be32d25eecefd1ebf4726969b。analysis/download/QA/local_archive proof回run以archive_remote_verification_003逐远端SHA核，manual_sync_003保留旧manual并原子同步。本节保留Robust93.11、HPUD94.1及PAF95.1，未改其它实验。
+
+完整独立验收与小归档完成，一次最终Decision/Recommended Next Step通知后删除paf-v1监测，不追加研究、不自动校准、不更新production。本批结论只覆盖固定方法/已看VOC开发数据，无独立泛化主张。
+
+## 96. Retrieval-Aligned GMP v1（RA-GMP / Bank-Feedback GMP，2026-10-24独立实现）
+
+用户附件完整原文保存在`experiments/plans/retrieval_aligned_gmp_v1/request.md`，固定计划与协议为同目录`plan.md`、`protocol.json`，当前状态以`work_state_001.json`为准。版本ID预定为`retrieval_aligned_gmp_20261023_230000`（前一回合创建的版本名称，不代表该时刻已启动）。沿用已授权HPC环境，所有科学计算仅Slurm、每GPU一个worker；个人等待queue不恢复，已结束Robust/HPUD/PAF不重启、不混合结果。
+
+独立实现为`tools/experimental_retrieval_aligned_gmp.py`、`retrieval_aligned_gmp_protocol.py`、`retrieval_aligned_gmp_runtime.py`、`retrieval_aligned_gmp_technical.py`、`retrieval_aligned_gmp_full.py`、`retrieval_aligned_gmp_audit.py`及两个test模块；不改生产入口/src/configs。原Robust的source adapter仅用于已签名token/原mask pool输入IO，不运行其聚合器、不用Robust raw或MLP。teacher为第93节已验收来源链中的原hard-center GMP、各seed原匹配MLP与原投影库，所有旧文件只读。
+
+scorer固定1280→128/GELU→1，末层weight/bias零初始化，a=.5+sigmoid(h)；只输入token feature，无class/bank/prototype/坐标。p=a/sum(a)，mu与S用相同p；lambda=.1×trace(当前weighted S)，即原GMP规则应用于当前统计量，区别于旧Robust固定unweighted ridge。保持原hard-center/nearest fallback、FP32较小primal/dual Cholesky、残差<=1e-4，无精度/solver/pooling fallback。全1在实际平台必须bitwise回到原uniform_gmp；历史跨平台source回放另保存maxabs/L2/float64cos、旧1e-6与bitwise，不能混淆两种断言。技术阶段还要求两原VOC query×三seed native center.2 HCR及零初始化RA均像素精确，绝不读取GT。
+
+冻结原8466fit/2116hold图，gallery仅fit的27939成员，内部query6941成员；不把原MLP已有内部选模的development split称独立test。fit反馈排除全部同图成员及类中心统计，不能可靠核image identity即停。先从实际HPC token重算普通GMP z0；原B0投影向量保持历史字节。固定positive5、production balanced K25/top5/search2/center.2分数最高的三个错误类、各negative5，少于5取实际可用数；只缓存ID/索引/签名，不复制bank向量，训练不动态TopK。训练分数按附件.6local+.4center、tau.07，beta1/gamma.05；AdamWlr1e-4/wd1e-4，三seed42/123/2026各30×100步，batch2=一hard(错或margin<.1)+一均匀non-hard，分两次backward平均loss且全N不截断。MLP0参数冻结，forward保留输入梯度；固定最后epoch30、不内部选epoch或beta搜索。
+
+内部报告top1/macro/top5/margin/NN25、rescued/damaged/both、五margin箱、每region N及weight均值/std/min/max/分位/>1.1/<.9、descriptor coordinate MAE与cosine；rescued/damaged正类和固定baseline hard-negative分数变化。gate固定三seed mean top1正、至少2/3正、至少2/3 net_rescue正，且每seed margin>=.20箱非空且accuracy下降不超.1pp。失败则`complete_no_internal_gain / VOC NOT RUN`并停止。低weight不解释成背景，无效不能证明所有GMP已bank-optimal。
+
+只有gate通过且独立internal audit passed/Slurm COMPLETED0:0，才允许重算各seed全部34880成员含10569BG、无重过滤或最远10%删除，按原CE+.5SupCon50×100/split/sampler/optimizer/center.4内部选模训练匹配1280-512-256 MLP，最终每seed一个RA库、center.2原retrieval/NMS/HCR。固定GMP/RA×三seed×clean/HCR×1449=17388 PNG全SHA提交后才一次VOC GT评测，保存12组逐图CM/21类IoU/错误结构/逐seed及mean/sampleSD/paired方向；VOC已看过，仅开发证据。通过gate后另做两个轻量内部消融：beta0同30×100与未训练all1精确回归，不增加消融VOC arms，不择优替换primary。禁止Round2/query-time feedback/class-specific参数/空间分支/新token/SAM3/伪标签/提议/额外搜索。
+
+大产物分别置于`storage/retrieval_aligned_gmp/版本`、`storage/feedback/版本`、`storage/raw_banks/voc/版本`、`storage/mlp_banks/voc/版本`、`storage/predictions/voc/版本`；scorer在`weights/retrieval_aligned_gmp/版本`，匹配MLP在`weights/sam3_adapter/版本`，清单/指标在`experiments/版本`，冻结code/ledger在`experiments/hpc_launch_audits/版本`，日志在`logs/retrieval_aligned_gmp/版本`。预定technical→4 baseline→3feedback→3scorer→3internal→gate→独立internal audit；条件full/消融/eval/final audit在内部接受前不提交。已有guard/JobID只查不重交；失败保留attempt，科学修复用新版本。真实GPFS group/data余量>=5GiB，不df或预扫旧token。CPU角色占1V100配额但CUDA隐藏，不称零GPU资源；每GPU角色6CPU24G，真实峰值/角色耗时及最早start到最晚end整体墙钟分别报告。
+
+当前仅本地12项协议/身份/排除/gate检查已通过；本地缺torch，不能称26项数值/梯度或真实V100探针通过。尚无本版真实JobID、训练、internal gate或VOC结果，后续提交/技术验收另记。固定批无论升平降结束后停止、独立验收小归档；不更新主线/部署/GitHub/ZIP。用户暂停取消立即安全停本批及监测，不自动恢复、不动其它实验。
+
+### 96.1 首版技术预检提交及反馈同分记录修正（2026-10-24）
+
+230000首版已实际注册，manifest SHA145d91e2609bcd1ff3b614c8884493b89a395c39345048f04aac133d9c1b88b6、binding3f25ce89c78c4021b17898de8a76aa8e7b45919396a4f0f9d9f1cefbba57aad4；408旧文件逐SHA克隆、11新代码/计划文件逐SHA核验后冻结，真实quota余227082264576字节。唯一technical Job3789823已提交，最近快照RUNNING2:40/c2v100m2-7；此为历史运行快照，终态/真实技术proof以ledger与后续检查为准。五份小manifest/实际jobs/注册/clone/expected凭据已下载至plan/launch_receipts/230000并核SHA/binding，local_launch_verification_001只launch_inputs_verified，不是完整accept或方法质量通过。
+
+在首版生成任何feedback或训练scorer之前，检查发现其feedback缓存对class-score同分用了字典序，与原生产检索np.argsort(scores)[::-1]不完全一致。已保留首版code/manifest/JobID/log及本地attempts/230000，首版只作为技术预检，不继续internal/full。新版本retrieval_aligned_gmp_20261024_001500修正同分顺序，添加该边界回归，并对已保存的实际GMP全成员增加finite/nonzero拒绝检查；不改GMP/scorer/loss数学、数据、seed、超参数、检索/NMS/HCR。新版本目标27项测试；本地13项协议检查先行，真实数值/梯度和六份像素proof仍须新Slurm技术验证。必须先确认旧technical真实终态且无活allocation，才唯一提交新technical；不因GPFS/SSH等待重提或假称退出。当前工作路由以plan/work_state_001.json新version为准。
+
+### 96.2 修正版不可变注册与技术路由（2026-10-24）
+
+旧technical3789823现已实际COMPLETED0:0/8:31，无failure；日志26测试无skip通过，technical_report已生成。旧版仅作预检历史保留，不继续feedback/scorer/internal/full；不能用其26测试替代修正版27测试，也不当方法有效性或VOC结果。修正版本地13项协议/身份/排除/同分/gate检查全部通过，当前新版本是retrieval_aligned_gmp_20261024_001500。
+
+修正版注册manifest SHA013c54e4d5f9511c9ec524db2dfc79b174d2ced48f2c17d02fae1c19297db065、binding9e1f539ade8c38133a9c8606beb19f0fdd7d095e7e62c0fa228324a6e49f018c；419条code记录=408旧文件克隆+11新代码/计划补丁，逐SHA核后冻结。注册真实GPFS余226981519360字节。manifest/registration/clone_patch/expected四小凭据已下载至plan/launch_receipts/本版并依实际SHA/binding及所有新补丁核验；local_registration_verification_001只registration_inputs_verified，不是completion acceptance。旧作业终态确认后才向prepare_remote.py technical发出一次修正版提交请求，实际JobID及请求是否CONTROL_DONE以work_state和audit/jobs.json为准，存在guard或JobID不能重提。
+
+后续固定链与内部门槛未变；27无skip、真实gradient/回归及6份native/零初始化RA像素proof且新technical C0后才唯一提交internal链，完整独立internal accept+C0且gate通过才full。正常等待静默，ra-gmp监测仅跟本批并在完整独立接受归档/最终通知后删除。当前没有scorer训练、内部gain、bank重建或新VOC精度结论。
+
+修正版唯一technical实际成功Job3789863，actual jobs.json已下载并核binding与manifestSHA，local_launch_verification_001为launch_inputs_verified而非completion；未排internal/full依赖。旧版technical/target_tests/complete/execution四小文件已下载，依旧technical_complete中的artifact SHA核报告与tests，旧26无skip/3真实梯度且MLP0不变/6native及零初始化RA像素精确均确实通过。旧版只作为数值技术历史，不冒充修正版27目标验收。
+
+### 96.3 修正版技术通过、已完成JobID依赖回收后的外层恢复（2026-10-24）
+
+修正版technical3789863已实际COMPLETED0:0、Slurm1:14；27目标测试无skip，真实2fit/2hold图的全1对当前平台uniform_gmp精确、三seed冻结MLP0的正梯度且参数不变、两原query×三seed的native和zero-init RA历史HCR逐像素一致全部通过，未读GT、未新SAM3。technical_report SHA2c3012a88daf61a97750135969c6a111eb7442fc30ffc50647069dc0ed2deeca；阶段wall28.623480619862676秒，torch allocated峰值326.32763671875MiB（进程分配峰值，不是驱动整卡峰值）。technical/target_tests/complete/execution小文件已下载，依complete签名SHA及binding/27无skip/3gradient/6pixel逐项核过，local_technical_verification_001为技术接受，不是完整completion acceptance。
+
+第一次internal提交的baseline因`--dependency=afterok:3789863`被sbatch拒绝：returncode1、stdout空、无JobID。真实sacct仍COMPLETED0:0，而scontrol已明确Invalid job id、用户队列无该allocation，证明是已完成JobID被调度器回收后的依赖关联问题，不是科学失败或重复跑。原prepare_remote.py/submit_internal.guard/失败命令和ledger留存。新独立外层`submit_continuation_002.py` SHAac511639ed5b193e009cfd6e98c76d5340dda0c17dfa8e1d79e84e7586928c07先核完整技术proof实际字节及parent C0/无活allocation，再只省略已经履行的根afterok；所有新live依赖仍afterok。科学419文件、数据、数学、seed、资源参数均不变，不重新layout/register/上传科学code或重跑technical。
+
+唯一实际内部ledger现为technical3789863、baseline3789972 array0-3%4、feedback3789973 array0-2%3、scorer3789974 array0-2%3、internal3789975 array0-2%3、gate3789976、独立audit_internal3789980，共15科学child及1独立audit。原无JobID的失败行保存在baseline.prior_no_job_attempts与jobs_before_internal_continuation_002.json；新journal/guard/outerSHA及各JobID分别落盘。已有JobID/guards仅查询，不再次submit或手动跑活audit。当前full/消融/VOC尚未提交；必须internal gate和独立accept+C0后才用同一外层002提交条件full，避免给已回收的audit根JobID再挂afterok，新live边仍保持依赖。
+
+条件full前另以已保存整数rescued/damaged复核同一预注册gate，避免浮点相减把三seed零均值误判正收益：6941相同query分母下sum(net_rescue)>0等价mean top1正；高margin下降<=.1pp等价1000×(rescued−damaged)>=−N。两个纯外层边界检查已通过，不计入27科学测试，不重算检索/GT、不改参数、不将原FAIL提升为PASS；如与冻结浮点报告不符，保留两者并停止full，只准新外层数值报告/独立审计修复。内部top5含义为五个最高类别分数的命中，NN25为25邻居同伪类比例。
+
+手册96–96.2已由manual_sync_001保留远端旧SHA30a0dded360d36484c914f8c4dcf7f41c001994483622e9dfd52a1ad74b8145d后原子同步23b63a3b4657e530493561738b9bbde7c9ab28bc6d6dda531689957758966875，proof已下载核验。后续本小节及startup新记录须新manual_sync_002备份当前remote再同步，不覆盖93.11/94.1/95.2。正常进展静默，最终以本版内部或完整独立accept+C0和小归档为准，不能把当前baseline准备或技术通过当scorer/MLP训练完成或新VOC精度。
+
+外层恢复小凭据归档：launch_recovery_catalog_002 SHA783d721ebf4675b908d2c8d54f4385fb8b19d026ef76d275cecda774234d0b56，catalog及actual jobs/原无JobID拒绝ledger备份/新提交完成proof/guard/journal/首次状态snapshot共七小文件已本地下载，其中六个artifact逐远端catalog SHA核验，local_recovery_verification_002为launch_recovery_inputs_verified而非completion。首次snapshot四baseline子项实际RUNNING9:33、节点c2v100m2-8及c2v100m2-9，其余科学与独立audit依赖PENDING，无failure。日志每25图才输出一次，当前日志下界0不能当作零产物或退出；正式startup仍待真实首产物/Slurm/proc/GPU核验，不提前宣称scorer或精度完成。
+
+### 96.4 RA-GMP四路基准特征准备正式启动验收（2026-10-24）
+
+修正版startup_validation_001.json实际passed，SHA295e0d2e984d73088515caf8c5ae783ab33060caeee427e8ac8dacbcbba75cf3、14982字节；startup_download_catalog_001 SHA2f6ab85e064641a5889d7223e3219a16645bb46a8d33005c01aeb732e4f54a96。13份首产物/receipt/技术proof已逐catalog字节SHA及size在本地核验，local_startup_verification_001保存在plan/launch_receipts/本版/startup_001；四份新NPZ均为有限FP32[区域数,1280]、对应原成员ID/class/order。该proof仅正式启动验收，不是internal或full completion acceptance。
+
+四baseline子项在核验快照均真实RUNNING，精确Slurm array/actual JobID、lock/PID/proc命令与四不同V100 UUID均通过：shard0实际3789977/PID3709835，首图2007_000032形状[5,1280]；shard1实际3789978/PID539290，首图2007_000039形状[2,1280]；shard2实际3789979/PID539291，首图2007_000063形状[3,1280]；shard3实际3789972/PID539289，首图2007_000068形状[2,1280]。完整GPU UUID与实际receipt/NPZ SHA见proof。最近启动检查elapsed21:01，日志进度450/400/375/375图，仅为当时下界1600图，不是34880成员完成或实时持续状态。
+
+当前运行的是共享普通GMP基准特征准备；三seed反馈/scorer训练/内部检索/gate及独立internal audit已按原ledger排定，尚无内部gain或VOC精度。27技术测试及真实gradient/像素回归通过不代表方法有效；必须内部gate与独立accept及audit C0后才允许条件full/轻量内部消融/VOC，失败则VOC NOT RUN并固定批停止。未重SAM3、未读GT、未修改冻结419科学文件或任何科学参数。正式启动只通知一次，后续正常推进静默。
+
+### 96.5 RA-GMP内部接受及预注册条件完整链提交（2026-10-24）
+
+固定内部阶段15个科学child全部COMPLETED0:0，独立audit_internal3789980亦COMPLETED0:0/4:08；completion_acceptance_internal.json statuspassed、binding与原manifest一致，SHA8e57dd88c5ef0b97a46c633e96a4b74d1767f4915084266901bdc1be7ab1dde4。独立审计核10602份保存artifact、冻结teacher/split/同图排除、反馈27939/内部6941成员身份与保存统计、三scorer固定30×100及teacher不变；未解码GT/token/model或科学重算。这是内部阶段接受，不是完整VOC接受。
+
+三seed42/123/2026内部top1增益分别0.07203572972194205/0.23051433511022124/0.2593286269989892 pp，net rescue为5/16/18，三seed均正，mean+0.18729289727705084 pp。每seed高margin>=.20组分别6335/6323/6315条，rescued=damaged=0，满足原保护门槛。独立外层从已保存整数核sum(net)=39>0、3/3正及1000×(rescued−damaged)>=−N，与原浮点gate一致；保存gate_arithmetic_review_001，不改变阈值或重检索。内部split复用了原MLP选模development数据和伪标签，不是独立test，更不是VOC mIoU收益。
+
+内部accept/gate/summary/三metrics六小文件依新catalog逐SHA下载核验，local_verification保存在plan/launch_receipts/本版/internal_accept_001。internal_acceptance_catalog_001 SHA0b26fb65b99f609bff0942df45555385ca24284ee15d306adf80c506b35a5a36；条件full前实际mmlsquota组zhengyuan/data余225008582656字节，未df或扫描旧token。原419科学文件与所有数据/数学/seed/参数不变。
+
+满足预注册门槛后仅一次调用local_control.submit(full)，经精确计数guard及submit_continuation_002再核internal audit C0/无活allocation，省略已履行且被回收的audit根依赖；新live边全部afterok。实际唯一新ledger：ablation3790369 array0-2%3、full3790370 array0-2%3、evaluate3790371依赖两array成功、independent audit_final3790372依赖evaluate成功。首快照六GPU子项RUNNING1:02，CPU评测及audit依赖PENDING；此仅Slurm状态，不当完整首产物验收、MLP完成或新VOC精度。已有JobID/guard禁止重复提交或手动verify活audit。
+
+两轻消融仅内部beta0与untrained全1，不择优改primary或增VOC arms；full按既定34880成员重建匹配MLP/单库，GMP/RA×三seed×clean/HCR全部17388PNG先SHA commit才一次GT。最终仍须completion_acceptance_final passed及audit_final C0，再小文件分析归档；当前VOC NOT YET RUN，无最终质量结论。正常后续进展静默，固定批无论升平降结束后停止。
+
+### 96.6 RA-GMP完整独立接受、结果与固定批归档（2026-10-24）
+
+本有效版本22个科学child全部COMPLETED0:0，内部audit3789980为C0/4:08，最终独立audit3790372为C0/4:59（北京时间11:49:30–11:54:29）。`completion_acceptance_final.json` statuspassed、binding完全一致，SHA`4f7591b75973676173aab064866cb554b08990d6a2d81e12b5d0fc50c08bace8`；核28177份保存artifact、12逻辑组/17388张新PNG及保存CM/CSV/成员/模型库字节。审计不解码GT/token/model tensor，不重GMP/检索/训练/推理/统计。本节最终状态覆盖96–96.5中历史“等待/未运行”快照，不改旧记录或冻结419科学文件。
+
+| seed | GMP clean mIoU% | RA clean mIoU% | clean Δ pp | GMP HCR mIoU% | RA HCR mIoU% | HCR Δ pp |
+|---|---|---|---|---|---|---|
+| 42 | 85.841489153 | 85.828568017 | -0.012921135 | 86.821717076 | 86.823621971 | +0.001904896 |
+| 123 | 85.558370535 | 85.567924618 | +0.009554083 | 86.321692168 | 86.347164206 | +0.025472038 |
+| 2026 | 85.699829448 | 85.727609215 | +0.027779766 | 86.374583191 | 86.581193555 | +0.206610364 |
+
+HCR三seed mean±sampleSD：GMP86.505997478±0.274697130%，RA86.583993244±0.238241221%；配对meanΔ+0.077995766pp、sampleSD0.112005083pp，3/3正。clean：GMP85.699896379±0.141559321%，RA85.708033950±0.131419704%；配对meanΔ+0.008137571pp、sampleSD0.020387391pp，2/3正。HCR收益主要来自seed2026，seed42接近持平，不能只展示最高seed或将本批均值与历史seed42单值混比。VOC val已查看，仅为固定模型开发证据，不宣称独立test或显著泛化。
+
+冻结teacher内部gate三seednet rescue5/16/18、mean top1+0.187292897pp仍成立，高margin>=.20组三seedrescued/damaged均0。宏类准确率和NN25一致性却三seed均小降，不能只报top1；五margin箱、固定hardnegative及权重统计完整保存在独立分析。beta0的net为5/16/16，untrained为0/0/0且descriptor对当前平台普通GMP bitwise，两个消融仅内部、不另增VOC arms。最终匹配新MLP内部检索与冻结teacher gate分开报告；低weight不能解释为背景，不宣称全局bank optimality。
+
+HCR错误计数三seed均值变化：BG_FP -95189、前景→背景FN +6520.667、前景类间wrong_FG +13212.333；chair→sofa +13396、sofa→chair -25258.667。HCR类均值变化较大包括bottle+1.466566pp/car+1.056427pp，ship-0.668695pp/train-0.431237pp/pottedplant-0.410962pp。完整21类及预指定8类逐seed在analysis，不据此调类别、阈值或参数。
+
+Slurm各角色elapsed：technical1:14；baseline四路1:20:47/1:31:05/1:31:05/1:31:05；feedback三路1:02:25/1:00:53/53:00；scorer1:14:21/1:14:17/1:13:09；internal各1:05:18；gate0:45；内部audit4:08；ablation三路各2:39:37；full4:04:10/4:04:18/4:04:18；evaluate3:04；最终audit4:59。有效批最早start北京时间2026-10-24 02:01:30至最晚end11:54:29，整体墙钟9:52:59；包含旧230000纯技术预检则01:45:39–11:54:29，为10:08:50，不累加并行。逐role execution wall/Slurm MaxRSS及primary/beta0独立训练wall见report。最大已记录Torch allocated峰值326.32763671875MiB，不是驱动整卡峰值；CPU角色仍占V100配额而CUDA隐藏。full execution混合raw重建/MLP/检索/预测，无独立匹配MLP或逐region GMP timer，不能伪造求解倍数/每region耗时。
+
+旧230000同分顺序预检与无JobID根依赖拒绝历史保留，见96.1–96.3；两次技术版本/各自code/manifest/log不覆盖。原GMP查询/MLP/库保留历史字节，RA使用HPC实际FP32 token及匹配新MLP；6native/6zero-init像素精确与当前all1 bitwise回归不等于跨平台全数组逐位相同。旧1e-6及maxabs/L2/cos边界如实保留。
+
+接受后118份小文件、32517779字节逐catalog SHA下载至`experiments/hpc_results/retrieval_aligned_gmp_20261024_001500/verified_20261024`，未下载大token/model/PNG树。catalog SHA`5c376f05b437e58ccad93a64af07b70f9bd03332361eb80227a4712bac6bea14`；`analysis_report.md` SHA`e30b725579821f9069bfb322126082a976a3144639d8d52881621c75b899b8da`；`analysis_tables_001.json` SHA`303b6a358a9b8a16f93cd98f66806d420319f77fa53b5b5c656f935f0b9eb58b`；`download_verification_001.json` SHA`e6cf8740d3e49fe84bd2f1eab9f0739f90511d2de88c3d9dfe43c124737fa755`；`local_archive_proof_001.json` SHA`1566820520a2026b7c0e5e53d54e0373dcbba2fa59be18bc77c41dc65f8d8571`。小analysis/proof回传同run，远端逐SHA归档及manual CAS凭据另存，不冒充新独立科学accept。
+
+本固定v1完整接受并归档，无论升平降到此停止；无Round2、query-time重新聚合、搜索、新proposal/库配方或主线部署。最终通知后仅删除ra-gmp监测，独立Selection×Aggregation四组消融第97节/其监测不动。
+
+## 97. Mask→Token Selection × Aggregation 四组因子消融（2026-10-24用户直接授权）
+
+用户要求A Hard Binary/NN＋Mean、B Hard-Center＋Mean、C Hard Binary/NN＋GMP、D Hard-Center＋GMP。原表列错位，按明确的2×2设计执行。独立计划在`experiments/plans/selection_pooling_factorial_v1/{request.md,plan.md,protocol.json,work_state_001.json}`，版本`selection_pooling_factorial_20261024_142000`；新独立代码`tools/selection_pooling_factorial_{core,runtime,audit}.py`及对应test，不修改生产src/configs或其它运行/历史实验。
+
+Hard Binary/NN固定为原图二值mask直接最近邻缩到72×72的floor索引约定，不经1008中间resize、不用soft/area权重。Hard-Center严格原stride14/center7原坐标取样。两种selection在非空mask空选时共用同一原mask质心nearest-token、row-major tie兜底；记录支持数、fallback、选择索引SHA与交并比。Mean为所选FP32 token算术均值后L2；GMP保持原rho.1、FP32/TF32off/较小Cholesky/残差<=1e-4，无solver替换。
+
+从已独立接受的Robust043000来源链只复用原普通GMP的输入IO：HPC实际1008/72×72×1280 FP32 token、原伪标签与34880成员含10569BG、成员ID/类别/顺序、8466fit/2116hold、原clean/raw候选；不用Robust或RA的特征/MLP/scorer，不重SAM3/标签/提议/过滤。四组全重新计算raw bank，包括D，并各自从头训练42/123/2026匹配1280-512-256两层MLP，共12模型，原CE+.5SupCon50×100和center.4内部选epoch不改。D本批重新训练结果作为因子对照，不能直接拿历史单seed86.821717%填入。历史跨平台GMP保留联合maxabs1e-5/L2 5e-5/cos>=1-1e-8界及旧1e-6/bitwise，当前D计算须精确等于当前生产GMP。
+
+最终固定单库检索center.2/K25/top5/search2、原NMS/score混合及HCR；R3和其它分支关闭。主表为HCR、clean为配对辅助，4×3×2×1449=34776新PNG全SHA提交后才本批一次GT。保存24组逐图CM/21IoU/FPFNwrongFG/chair↔sofa、三seed逐值/mean/sampleSD，以及B-A、D-C、C-A、D-B、interaction(D-B)-(C-A)，不据VOC调参或追加arm。VOC只属已查看开发数据。
+
+预注册链technical17无skip＋真实2train/2query四组探针＋6份历史native HCR像素回归→4extract→CPUmerge→12train_predict最大并行4→CPUevaluate→独立audit。每GPU一个worker，CPU角色仍分配1V100配额但CUDA隐藏；纯CPU计算不能说零GPU资源。现有guard/JobID只查不重交；新科学错误新version，保留attempt，只安全停本ledger未启动依赖。最终passed且audit C0后小结果逐SHA下载、分析归档与手册收尾；固定批无论升平降结束，不部署/发布/ZIP，不动RA等其它实验。当前仅8项本地几何/协议测试通过及语法检查；真实17测试、JobID、启动与精度以work_state及后续实际凭据为准。
+
+首个140000准备版本在注册复制计划时因旧快照已有`plans/request.md`而被“不覆盖”断言拦下；未写manifest、未生成JobID、无科学计算。其code/register.guard/上传记录及`registration_failure_001.json`完整保留，本地attempts也保留当时源码。新142000版本只将新计划放到`code/plans/factorial_v1`独立命名空间，四组数学、输入与参数不变；不续写140000或覆盖旧plan。
+
+### 97.1 独立注册与实际Slurm链（2026-10-24）
+
+142000实际manifest SHA`557744db04d93f5824986faa1a85c129f248b7fcd389cebcd554312fdc2e086f`，binding`6472bcf8b239687603eb7dbc10705117cf198f80cbd3c26b7bf375eec85da344`；408旧代码逐SHA克隆＋8新代码/测试/命名空间/计划文件逐SHA核后冻结，共416记录，未改生产。真实GPFS组zhengyuan/data注册余223108620288字节。manifest、registration、clone、expected、actual jobs、launch complete/guard及catalog已下载至plan/launch_receipts/本版，7份artifact逐catalog SHA核验，local_launch_verification_001为launch_inputs_verified，不是completion acceptance。
+
+唯一实际afterok链：technical3792900→extract3792901 array0-3%4→merge3792902→train_predict3792903 array0-11%4→evaluate3792904→independent audit3792905。已有JobID/guards不得重提或手动verify活审核。首快照technical RUNNING00:00:35/c2v100m2-2，其余依赖等待；后续真实17测试/2train2query/6像素回放及四路新非pilot FP32 artifact启动核验以proof为准，不把JobID或本地8测试当作全量启动/新精度。专用pinned控制session87686，不消费RA17135；所有请求CONTROL_DONE后才下一请求。
+
+### 97.2 四组四路特征提取正式启动验收（2026-10-24）
+
+technical3792900已COMPLETED0:0、Slurm2:09；17目标测试无skip通过，真实2train/2query四组descriptor与7个原源成员数值界通过，当前D对生产GMP bitwise精确，3seed×2query原native HCR历史PNG共6份逐像素精确。阶段execution wall39.23386683315039秒、Torch allocated峰值106.31787109375MiB；历史源7成员仍非bitwise，旧1e-6为6/7通过，最大maxabs1.6167759895324707e-6、L2=1.0153760935619246e-5，不能声称全平台逐位等价。
+
+外层startup_validation_001.json实际passed，SHA`0fe7a67b3c0dfe7f1ddea2bb8f647ff4c548df2cbeafc79d37148f7289c1d9f2`，10121字节；catalog SHA`f2af8ea427def98ebaf752e7050a6ab943bbc3d3572aeb910aa9ddd5747a4f3b`。12份技术/首次新receipt/四组NPZ/proof逐catalog SHA本地核验，四组真实有限FP32[N,1280]及L2范数通过。四路均至少2份非pilot新train产物，Slurm/scontrol实际JobID/lock/PID/命令与四不同V100 GPU_UUID通过；GPFS D等待为真实存活，不当退出。
+
+核验快照：shard0实际3792930/PID3282566，首新图2007_000121/[2,1280]；shard1实际3792931/PID2294668，2007_000170/[7,1280]；shard2实际3792932/PID818559，2007_000063/[3,1280]；shard3实际3792901/PID818558，2007_000068/[2,1280]。GPU UUID全文见proof。本地local_startup_verification_001为startup_proof_verified而非最终completion。四路日志旧进度250/200/250/250仅快照，尚无12匹配MLP完成或新mIoU。后续按既有afterok链继续，不重复startup/提交/独立审核；固定批结果无论升平降均收尾停止。
+
+
+### 97.3 四组消融完整独立接受与最终归档（2026-10-24）
+
+本版19个科学child全部COMPLETED0:0，独立audit3792905亦C0/11:54。`completion_acceptance_001.json` statuspassed、binding`6472bcf8b239687603eb7dbc10705117cf198f80cbd3c26b7bf375eec85da344`，SHA`4defef154dff0f00794c0a7a64ec912d51ba4630da04be981a68d515ca75ef31`；manifest仍`557744db04d93f5824986faa1a85c129f248b7fcd389cebcd554312fdc2e086f`、冻结416科学记录未变。审计核59839唯一文件、2774289020字节、24预测组/34776真实新PNG及34776保存逐图CM；不解码rawGT/token/modeltensor，不重GMP/检索/训练/推理/bootstrap。本节最终状态覆盖97–97.2历史等待快照，不改旧记录。
+
+| Arm | Selection | Aggregation | HCR mIoU% mean±sampleSD | clean mIoU% mean±sampleSD |
+|---|---|---|---|---|
+| A | Hard Binary / NN | Mean | 86.091188933±0.462041295 | 85.244631934±0.351834508 |
+| B | Hard-Center | Mean | 86.268826663±0.159349042 | 85.386750212±0.131002042 |
+| C | Hard Binary / NN | GMP | 86.380753236±0.234753390 | 85.611792115±0.194858442 |
+| D | Hard-Center | GMP | 86.505997478±0.274697130 | 85.699896379±0.141559321 |
+
+HCR逐seed42/123/2026：A=86.410642016/85.561402323/86.301522459；B=86.444359713/86.228843280/86.133276996；C=86.646872730/86.292352930/86.203034050；D=86.821717076/86.321692168/86.374583191。全部12匹配MLP均从头训练，D原raw也重新计算，未直接拿旧86.821717%填表；D与历史数值相符不宣称跨平台全数组或模型逐位相同。
+
+HCR配对meanΔ/sampleSD/正seed：B−A +0.177637730/0.436036329pp、2/3；D−C +0.125244242/0.083072510pp、3/3；C−A +0.289564303/0.417283626pp、2/3；D−B +0.237170816/0.142299312pp、3/3；D−A +0.414808545/0.343629768pp、3/3。interaction=(D−B)−(C−A)为−0.052393488pp、sampleSD0.516873135、逐seed+0.141126650/−0.638101718/+0.339794605pp，不能宣称超加性协同或显著性。NN下GMP在seed2026为−0.098488410pp，不能说所有seed/selection均提升。clean各配对及全21类/24组错误计数详见analysis与CSV；D−A clean mean+0.455264445pp、3/3正，interaction−0.054014014pp、1/3正。
+
+Selection诊断分母34880训练region，NN平均支持1569.044094037、Hard-Center1569.061725917，两者fallback均0；逐region选中集合Jaccard均值0.862637881（不是全部token汇池IoU，不是query精度）。34880含10569BG无重过滤。全部17388×2=34776新PNG先SHA commit才一次1449图GT；最终center.2/单匹配库/原NMS/HCR，R3关闭，内部epoch选择center.4不变。VOC仅已查看开发集，无独立test或新增bootstrap/参数/seed/arm。
+
+角色Slurm elapsed：technical2:09；extract四路48:12/49:28/53:27/53:27；merge21:52；train_predict按A42/A123/A2026/B42/B123/B2026/C42/C123/C2026/D42/D123/D2026为00:22:19/00:24:44/00:23:10/00:23:10/00:23:01/00:26:45/00:31:28/00:28:39/00:23:03/00:28:28/00:23:25/00:22:10；evaluate4:11；独立audit11:54。整体从北京时间14:02:54至16:54:51，墙钟2:51:57（10317秒），不累加并行。最大保存Torch allocated峰值111.297363281MiB，不是驱动整卡峰值；角色execution wall和CPU MaxRSS见report。CPUmerge/evaluate/audit仍占1V100配额但CUDA隐藏；train_predict混合训练/导出/预测，无独立逐region求解timer，不能捏造性能倍数。
+
+旧140000注册前同名plan保护失败无manifest/JobID/计算，全部attempt保留；142000仅计划命名空间隔离，没有科学修参救结果。87686监测本地进程失效仅重建pinned98515连接，无任何科学重复提交。17无skip/2train2query/当前D生产bitwise/6native历史像素回归和跨平台非bitwise边界均如实保存。
+
+接受后96份catalog小文件及资源receipt共97份、16913679字节逐SHA下载至`experiments/hpc_results/selection_pooling_factorial_20261024_142000/verified_20261024`。catalog SHA`70ebafe013b81d0b225f1b606e143394d78762151d3bf0fdf18555852269bc08`；analysis报告SHA`35b214b905df2f4d4e3d690c9bf3c7063dacd8cd7712ab405979bd7a1ec66fb7`；analysis_tables SHA`1041dcb2e6aa493da550df98d94ce139c7b05bda9c16bee493a68a1b628cb11e`；download_verification SHA`0ac9453ad4cae1490e351b52815cc1ff98153fbe6f6f99f06a95cca730e225c6`；local_archive_proof SHA`e671ad7899ea7155478586a5f3806878c85adbe6744793d58ae8dfe689d7700b`。小analysis/proof回传本run并核远端SHA，归档receipt与本节CAS同步proof另存；没有下载大token/model或34776PNG树。
+
+固定批完成且停止，无后续搜索/额外研究/主线部署/GitHub/ZIP。最终一次结果通知后仅删除selection-pooling-factorial监测，已完成RA/Robust/HPUD/PAF不重启。
+
+## 98. GMP descriptor的受控MLP/projector内部实验（2026-10-24用户附件授权）
+
+附件原文与三项明确回复保存在experiments/plans/mlp_projector_v1。用户确认先普通GMP，E0–E5×seed42/123/2026共18内部训练；低margin[0,.02)门槛按三seed平均top1差严格>0；真实production balancedK25/top5/search2/center.2宏准确率选epoch。历史v1实际5-NN宏准确率选模，center.4在该分支被忽略，因此E0改变选模规则而非仅center标量；所有训练本身照实际历史report/code不猜参数。原始1280D raw、34880成员含10569BG、8466fit/2116hold图和27939/6941 region不变，不能重新过滤。
+
+新独立tools/mlp_projector_models.py与tests/test_mlp_projector_models.py已实现E0原MLP、E1Linear、E2RMSNorm、E3冻结MLP0零初始化残差alpha.1、E4双head等权融合；主线src/config/历史权重不改。原CE classifier不在旧checkpoint中，保留历史新初始化可训练分类head，E3仅projector残差可训练、MLP0参数冻结且输入梯度图保留。E5严格在E3真实技术验证后才实现，按固定CE+.25SupCon+.25bank+.1preserve、tau.07、positive5/三错误类各5、冻结fit-only teacher与全部同图排除；优先复用已接受RA反馈IDs与排除逻辑，不引入RA特征/scorer。
+
+先代码审查→单元测试→seed42真实smoke→固定三seed内部实验，gate只报告不触发VOC。禁止VOC GT评测/选epoch/选模型、主线改动、历史覆盖/删除、参数或seed搜索、发布/部署/ZIP。当前本地无Torch，尚无真实单元测试或GPU启动证据、JobID或质量结果；后续以不可变probe/full manifest、实际Slurm ledger和独立proof为准。新入口/目录遵守storage数据、weights权重、experiments指标、logs日志；手册同步必须备份旧remote并CAS，不覆盖其它批。
+
+### 98.1 E3真实技术接受、完整快照与固定18组链（2026-10-24）
+
+三项用户回复已全部明确：只普通GMP18组；E0按真实production balanced K25/每类top5/search2/center.2宏准确率选epoch；低margin条件按三seed平均top1差>0。历史5NN/center.4只旁路记录，不能声称E0只改变center标量。历史训练配方实际为AdamW lr.001/wd.0001、CosineAnnealing50epoch、100step/epoch、8类×至多4张不同图片、CE+.5SupCon、温度.1、projector clip5，背景negative-only。保留历史E0初始化，所有arm同seed CE分类head初始化和采样序列SHA强制一致。
+
+本地12项保存指标/gate算术测试无skip通过；本地无Torch，因此Torch数值测试放在真实Slurm。E3独立技术版本mlp_projector_e3_probe_20261024_180000已Job3795563 COMPLETED0:0/3:12，克隆419旧文件+6新文件=425冻结记录。manifest SHAe33fe7cf7a7e76170d99848f761d595588b02402aa1d9bbf70c5bfac09aacab6、bindingeb025bec8157201349a40fbe9634b529c314c6251b109754e3f04cce29a90ddf；原probe源码/日志/manifest保留，6新文件已本地小归档。真实seed42原34880成员/10569BG/27939fit/6941hold身份通过，12模型测试无skip；step0 maxabs0、min float64cos0.9999999999999998，输入梯度norm119.25080108642578，3真实optimizer steps后MLP0张量不变。report SHAc664cce88ee338e238f472d4483263a96207da9e5740b9cd0f3f1ae18a546656及tests/complete小proof逐SHA下载核验。GPU TeslaV100-SXM2-32GB，execution wall130.570652723秒、Torch allocated峰值24.788574219MiB；不是正式18组完成或质量结果。
+
+只有此真实接受后才实现E5，继续E3相同零初始化残差架构，固定CE+.25SupCon+.25bank+.10preserve、tau.07，复用独立接受RA-GMP缓存的positive5/三错误类各5 IDs及原validate_feedback同图排除逻辑。只读取签名teacher B0向量与反馈，不加载RA特征/scorer、token或额外pool/context，不重新挖邻居。原cached teacher mining来自HPC普通GMP replay descriptor，来源边界保留；本批六arm始终使用同一份native普通GMP raw。E3/E5 base为同seed历史MLP0，不是本批新选择的E0。E5和E3之差是注册组合loss差异，不能都归因单独bank项。
+
+完整唯一版本mlp_projector_20261024_183000，run=HPC ROOT/experiments/mlp_ablation/版本，audit=ROOT/experiments/hpc_launch_audits/版本，权重在weights/mlp_projector/版本，投影库storage/mlp_banks/voc/版本，日志logs/mlp_projector/版本。冻结Code419克隆+13独立代码/测试/计划补丁=432记录，未改production src/config；manifest SHA78e193db3127ce083b19e5f9b6c4d10ca2d9ecd66a58e2ee658a8a4b11f688e4、bindingcc18bdaaf6de549a5500c2040bfa2c215a30eeb2fbd53c822ca477313268569b。组quota真实余218952744960字节，按全epoch checkpoint至少保留12GiB，不用df。旧pre-registration draft002本地哈希映射错误在上传前拦下，003重新生成全部SHA后才上传，坏draft保留且无注册/计算。
+
+输入缓存由Slurm technical调用原load_training_bank规范化一次，保存FP32统一transport cache到storage/mlp_projector/版本/normalized_inputs.npz；不是新GMP/encoder/token/伪标签或重新过滤，避免worker重复规范化差异成为变量。全部arm强制同raw数组/成员规范SHA、同seed采样和分类head初始化。最终checkpoint采用独立experimental格式/库签名，普通主线不自动加载。
+
+唯一afterok链：technical3796804（28目标无skip+全部6arm seed42真实smoke，各2epoch×3step）→E0 3796805 array0-2%3→E1–E5 3796806 array0-14%4→CPUsummary3796807→独立audit3796808。20个科学child加1audit，已实际全部提交成功；7小manifest/ledger/注册/clone/launch/expected/guard凭据本地核SHA、binding、432文件及每条afterok边，local_launch_verification_001只launch_inputs_verified，不是最终接受。有JobID/guard绝不重复submit/register/upload科学代码或手动verify活audit。
+
+最近已核2026-10-24T11:58:14Z快照：technical RUNNING12:58/c2v100m2-5，28目标测试0fail/0error/0skip；smoke E0/E1/E2完成、E3进行中；E0三seed及候选15任务仍依赖等待。此为历史快照，不提前称六smoke已通过、18正式训练已启动或最终gain。后续严格以work_state与实际ledger/complete/proof为准。所有compute仅Slurm一GPU一worker；technical1V100/6CPU24G4h，训练各1V100/6CPU24G48h，summary/audit占1V100配额6CPU24G12h但CUDA隐藏，不称零GPU分配。
+
+逐epoch保存loss/top1/macro/top5/margin/NN25、相对最终E0的rescued/damaged与五箱/IDs；E4两头分别诊断并保存全部query cosine，正式固定等权融合。每run每epoch权重与optimizer/scheduler状态、新best.pt、全量bank/export/config/CSV/MD保存；source检查禁止无效成员静默过滤。28测试+全6smoke完整C0后才afterok正式18组；所有18组均固定跑完，gate只报告不启动VOC。完整独立audit接受后逐SHA小结果下载、报告归档/成本/整体最早到最晚wall/手册收尾；无mainline/部署/GitHub/ZIP或自动参数修改，不重启其它已完成实验。
+
+### 98.2 固定18组正式启动的独立外层验收（2026-10-24）
+
+technical3796804已COMPLETED0:0/20:39，28目标测试0fail/0error/0skip，E0–E5六arm均完成真实seed42短程验证（各2epoch×3step）；其参数/权重独立于正式50×100任务。technical execution wall1185.026418209秒，保存Torch allocated峰值70.863769531MiB，不是整卡驱动峰值。旧98.1等待快照保留，本节覆盖当前状态。
+
+已唯一执行外层validate_startup_001.py，startup_validation_001.json statuspassed，SHA998f4adc72cc05a1ac924bcfc59661a67cd33074031578c42390a9a35fea4fb3；catalog SHA12fef5535b84e86cc9c653e801af5a40009370c0c63adc06d89140adf8576f07，8小proof逐SHA本地下载核验。三seed各首轮新checkpoint和6941query数组字节SHA、完整ID顺序/合法预测/有限margin、精确Slurm child→actual JobID、lock/PID/entry/manifest/phase/index以及三不同V100 GPU UUID均通过。检查只读保存数据/进程，不训练推理，不读VOC GT/token/modeltensor；没有下载模型checkpoint或重做检索。
+
+seed42 logical3796805_0→actual3797051/PID1295264/c2v100m2-5/GPU-74bd20a2-39d8-6895-6011-990eed49344a；seed123 logical3796805_1→actual3797052/PID668494/c2v100m2-9/GPU-4c56466d-decf-62f8-61c9-8957076a484f；seed2026 logical3796805_2→actual3796805/PID668493/c2v100m2-9/GPU-0df27264-355c-9d0d-bf50-382898c6e32a。GPU memory448MiB只是当时驱动采样，不是Torch峰值。三worker当时真实RUNNING，未伪造完成worker存活。
+
+最近2026-10-24T12:48:25Z科学快照：E0三seed RUNNING42:30，日志epoch34/22/22（seed42/123/2026），无failure；候选15组/summary/audit仍afterok等待。这些是运行进度，不是50epoch完成、最终best模型、promotion gate或VOC mIoU结果。正式启动验收只首次通知一次，后续不重跑validator、不重复既有科学/审计提交；有JobID/guard的432冻结snapshot保持原字节。
+
+manual98.1已保留旧remote9e41057978d5cf7cec782ec5242cbb7f333fda76106471eebf16f6c42ce77856并CAS同步a69787afef7e905ee100e036178550ef2e8ed6f23fcaf815286f1cb2aa9f4937，manual_sync_001.json SHA b71d608e723ca5ee364119a5c4ef76ef5e3b1d18ad4afab6fd64787da2a30d2e已小下载核。此次同步同样备份实际旧manual并CAS原子替换，不修改冻结科学code。所有18固定训练继续；无论gate正负不自动跑VOC，不改变主线/参数，不追加研究。
+
+### 98.3 内部18组完成及独立接受，另授权VOC follow-up（2026-10-25）
+
+本批20科学child及独立audit3796808全COMPLETED0:0；audit elapsed55:57，核5223唯一文件/7921617779字节，completion_acceptance_001.json passed/exactbinding，SHA6280dcbc173f7d1d6d1dd84b82d7731e94cd53bd1badeab8ad06113344259189。small_result_catalog_001 SHA55cd5e5781e7c44210acf1ceba8a5f434146e18a16ce474c8223506c3f44baea。六小summary/accept/catalog/gate/CSV/analysis已下载，五非catalog文件依catalog逐SHA核，再与远端SHA anchor核accept/catalog；原内部manifest的VOC_authorized=false保持不变。
+
+内部伪标签Top1三seed mean±sampleSD：E0=98.760985449±0.024953909%，E1=98.592902079±0.193471038%，E2=98.564087788±0.064965419%，E3=98.756183067±0.044014558%，E4=98.607309225±0.068085515%，E5=98.837823560±0.029990866%。E5−E0 mean+0.076838112pp、3/3正，macro+0.016925909pp、low-bin+4.936439222pp。E5仅meanTop1>=.10pp未过，8项条件过7项；所有候选原gate均not_supported，不能改阈值声称通过或将内部Top1解释成VOC mIoU。原完整小结果/成本/独立analysis归档仍待完成，不能把六小summary下载冒充完整归档。
+
+用户随后明确要求“现在看看每一个的最终miou能到多少”，因此新独立VOC follow-up按第99节执行全部六arm三seed，并非原gate自动promotion；原内部协议、权重、manifest、结果和失败历史全部保留，不原地修改。
+
+### 98.4 内部18组完整小归档与独立分析完成（2026-10-25）
+
+本批20科学child与audit3796808全C0，原accept SHA6280dcbc173f7d1d6d1dd84b82d7731e94cd53bd1badeab8ad06113344259189、catalog SHA55cd5e5781e7c44210acf1ceba8a5f434146e18a16ce474c8223506c3f44baea不变。157小catalog文件共11851264字节已全部逐SHA下载核，而非此前仅六summary。归档目录experiments/hpc_results/mlp_projector_20261024_183000/verified_20261024，新增独立analysis_report.md（SHAeefac63415450fb91099c6c0242c123d8709b88085ca89f40fcdd6c4aac702e7）、analysis_tables_002及完整每类/五箱CSV，含18组逐seed/mean/sampleSD/paired、完整救损/高箱损伤、E4两头及6941query cosine、参数与optimizer/eval/export/保存forward benchmark分开。E0为基线无candidate gate；五个候选均未过全部条件，E5仍只7/8，不能改旧门槛或归因单独Bank。
+
+整批最早start至最晚end为2026-10-24T19:45:16+08:00至2026-10-25T03:06:52+08:00，墙钟26496秒（7:21:36，不累加并行）。Slurm角色耗时/MaxRSS/AllocTRES全部保存archive_scheduler_resources_002；进程级保存Torch allocated最大71.4755859375MiB，不是驱动整卡峰值。E3前置probe3:12另列，不与full并行时长求和。download_verification SHAbcd0b2b3386e898b24e26e4e4fa9e0b163e8237d3c30adc167b012a6a42e7d9c；local_archive_proof_003 SHA18b6d60b95ceefb1b457bf3790fdc88c24e8f6a43a0feed844730c08ce440e90。小analysis/CSV/download/archiveproof回原run逐远端SHA核，原科学432code、模型、数据、gate、VOC=false历史保持。旧preupload草案与E3技术历史均保留，无新的科学失败。第99节VOC是后续用户明确授权，不反改本内部结论。
+
+## 99. 六种MLP/projector固定VOC mIoU follow-up（2026-10-25新明确授权）
+
+入口tools/mlp_projector_voc.py及独立tools/mlp_projector_voc_audit.py/core，计划experiments/plans/mlp_projector_voc_v1；唯一计划版本mlp_projector_voc_20261025_120000。每种E0–E5各42/123/2026共18组固定已接受best checkpoint及各自匹配34880成员单库；E4固定等权融合，E3/E5保留历史MLP0基座。所有arm均评测，不因原gate失败剔除，不重新训练或按VOC重选epoch。新格式按各自模型factory严格reload，不把所有checkpoint塞进旧两层MLP loader，不改变production src/config或旧432 snapshot。
+
+只读原native普通GMP保存1280D query descriptor，依原mask hash映射冻结proposal pool/order/scores/HCR flags；不重GMP/encoder/SAM3/token/pseudo/proposal。统一balancedK25/top5/search2/center.2/margin0/proposal mixture.2/NMS.4/instance threshold.02和原HCR，R3关闭。主表最终HCR mIoU，clean辅助。36逻辑预测组/52164真实新PNG全SHA commit后才本批GT；1449GT各一次解码，保存36逐图CM/21IoU/BGFP/FN/wrongFG/chair-sofa、逐seedmean/sampleSD和相对E0的配对方向；VOC仍是已查看development，不当独立test。
+
+先6个本地保存CM/配对统计测试（已无skip通过）→Slurm6CPU24G1V100技术阶段6h：18checkpoint前1024同源输入重放原匹配export、18×2图真实clean/HCR形状类别有效、3seed×2原native HCR历史PNG像素精确→predict18array%4各1V100/48h→CPUeval12h→CPU独立audit12h。CPU角色仍分配1V100配额但CUDA隐藏，不称零GPU。新7补丁将逐SHA克隆注册到独立code，已有guard/JobID不可重复提交/手动verify活audit。当前登记/JobID/实时状态以后续work_state与实际ledger为准，未提前声称GPU技术或全量预测完成。
+
+数据与输出storage/predictions/voc/版本，参数指标experiments/mlp_projector_voc/版本，冻结code/manifest/JobID在experiments/hpc_launch_audits/版本，日志logs/mlp_projector_voc/版本；不新增训练权重。失败留全部attempt，只停本ledger未开始依赖；科学修复新版本+针对真实probe，不改运行snapshot/断言。独立accept passed+auditC0后小summary/36CM/CSV/proof逐SHA归档，分析每种模型最终mIoU、seed方向/类与错误成本和资源口径，再backup/CAS原子同步本节。无论升平降固定批结束，不调阈值/seed/权重/结构、不追加研究、不自动部署/主线替换/GitHub/ZIP。用户暂停取消只停本batch和监测，不自动恢复，不动其它实验。
+
+### 99.1 六种模型VOC follow-up已唯一提交（2026-10-25）
+
+第99节独立版本已439冻结记录，manifest SHAb891d7ae92db95e9861b15005b4d86643c9c666a135bf7071f25ef600d6c6756，binding29f06dba06bfecc6d53578225adf4926001caf3ba5396dbd2e8433410f3531db。唯一afterok链technical3801100→predict3801101 array0-17%4→evaluate3801102→独立audit3801103，实际ledger/guard与6小launch凭据本地核SHA/binding/资源/所有依赖边。quota余203942690816字节。最近04:12:19Z快照technical RUNNING3:09/c2v100m2-8，日志空、targettests尚未出，其余PENDING；不当作GPU技术/最终预测/mIoU完成。后续以该plan/work_state最新为准。此批此前用户明确授权，和下述新内部loss拆解互相独立；新附件不向既有VOC链追加模型，不读取其结果调新loss，不修改或取消已有链。
+
+### 99.2 六种模型VOC完整评测、独立接受与归档（2026-10-25）
+
+本批20科学child及独立audit3801103全部COMPLETED0:0，technical9:54、evaluate17:10、audit18:01；18predict分别17:00/26:34/21:13/5:36/9:47/4:03/6:35/5:20/5:12/6:29/4:45/6:56/6:53/4:38/5:27/4:24/8:02/5:58。accept passed/exactbinding29f06dba06bfecc6d53578225adf4926001caf3ba5396dbd2e8433410f3531db，SHA0e9023d270df00c02b55907f9d445135e9d9e9005a07b93a59185223de1b6254；catalog SHAa5659e318db26e9f25baab659688e3b281a6dc2216a417abf20727831e2028c0。审核53138唯一文件/1136782096字节，36组/52164真实新PNG全部SHA commit后才一次1449GT，保存36逐图CM、21IoU与错误成本。无failure/lock，18checkpoint各1024输入reload maxabs0，6native HCR pixel exact和6tests无skip；首4完成worker以C0+execution核真实新16PNG，不伪造存活。startup proof SHAfd768a17355955d9cdade1d5ce342fa983c1af69cf3fc26dfb583a9aefde205a及4小proof/catalog本地逐SHA已核；完成结果覆盖迟到的启动通知，不重复启动/重跑任何JobID。
+
+| Arm | HCR seed42 /123 /2026 mIoU% | HCR mean±sampleSD% | HCR meanΔE0 pp /正seed | clean mean±sampleSD% |
+|---|---|---|---|---|
+| E0 两层MLP |86.833484 /86.562251 /86.465041|86.620258±0.190948|0 /基线|85.781213±0.144475|
+| E1 Linear |86.311658 /86.537694 /86.685031|86.511461±0.188064|−0.108797 /1/3|85.600307±0.163337|
+| E2 RMSNorm |85.765844 /85.081838 /86.034236|85.627306±0.491080|−0.992952 /0/3|85.153395±0.446453|
+| E3 冻结base残差 |86.870522 /86.174829 /86.496617|86.513989±0.348172|−0.106269 /2/3|85.743498±0.214497|
+| E4 双头固定融合 |86.105329 /86.345859 /86.515044|86.322077±0.205891|−0.298181 /1/3|85.403073±0.239844|
+| E5 组合loss残差 |86.273346 /86.430361 /86.242704|86.315470±0.100671|−0.304788 /0/3|85.604055±0.053079|
+
+本固定三seed条件下E0平均HCR最好，五候选平均都低于E0；E5内部Top1+0.076838pp未转化为VOC HCR收益（−0.304788pp、三seed均下降），不能将组合loss结果单归因Bank。E3两个seed小正，一个seed较大负，不能挑seed42最高值当总体胜出。完整21类/paired/errors在独立analysis和CSV，FN/BGFP/wrongFG/chair↔sofa口径分开，子项不相加冒充mIoU贡献。普通GMP、原pool/center.2/K25/top5/search2/NMS/HCR、R3关闭；固定内部best checkpoint，无重训/VOC重选epoch/调参。VOC是已查看development而非独立test；不自动替换主线或追加研究。
+
+整批墙钟2026-10-25T12:09:10+08:00至2026-10-25T13:49:58+08:00，6048秒（1:40:48，不累加并行）。保存Torch allocated最大31.134765625MiB，非驱动整卡峰值；CPUevaluate/audit仍有1V100资源配额并隐藏CUDA。66小catalog文件共16066882字节逐SHA下载至experiments/hpc_results/mlp_projector_voc_20261025_120000/verified_20261025，另保存scheduler资源receipt。analysis_report.md SHAad05246ed2f3bc8aae9093a8f053cd3a92c2405ec5de1f5eef61bfd7f710b093；download_verification SHA9eee2425da44c2103d24ac2b91b926e4c23371da387f02891832fd4d78a2692a；local_archive_proof_003 SHAa2288012bf86008409d135cd69c09baddf085ed48428a617ad7402f3943f3485。小analysis/CSV/download/archiveproof回run逐SHA核，不下载大checkpoint/bank/token/52164PNG树。439冻结科学code、所有原内部历史、其它批与主线未改。本固定批完成即停止，最终一次结果通知后只删除mlp-projector-v1监测，不删除独立loss任务。
+
+## 100. 固定残差projector的loss因果拆解（2026-10-25新附件授权）
+
+用户附件原文、固定矩阵与操作状态在experiments/plans/retrieval_aligned_projector_factorial_v1。唯一计划版本retrieval_aligned_projector_factorial_20261025_130000；run=HPC ROOT/experiments/retrieval_aligned_projector_factorial/版本，权重weights/projector_loss_factorial/版本，日志logs/projector_loss_factorial/版本，audit/code独立冻结。只新增R_S025、R_S025_bank、R_S025_preserve×42/123/2026共9完整训练；复用已接受E3为R_S05_existing、E5为R_S025_bank_preserve，另E0作固定分箱/比较基线，共9个复用selected模型。绝不重训E3/E5或扫权重/架构/alpha/tau；旧E5+0.076838pp没有过0.10pp门槛的历史结论不改。
+
+结构直接复用已接受FrozenBaseResidualProjector和同seed历史MLP0：冻结1280-512-256 base，256-64-256/GELU残差，alpha.1/A2全零，保留输入图不detach。分类head、原balanced_batch/seed逻辑与AdamW.001/wd.0001/Cosine50×100/8类×4不同图/CE与SupCon温度.1/BG negative-only/只裁projector梯度5完全沿原训练条件。A=CE+.25SupCon，B=A+.25Bank，C=A+.10Preserve，D复用原E5=A+.25Bank+.10Preserve。Bank类与Preserve表达式均用已接受E5实现，tau.07、positive5/三错误类各5旧缓存、全同图排除、teacher detach，不生成新negative或RA scorer。
+
+数据同一已接受normalization transport cache，34880含10569BG、27939fit/6941hold region与8466/2116图，IDs/class/order/raw/split不变、不重滤。Slurm references阶段核原E0/E3/E5 sampler/init/descriptor/member SHA一致，复算原5000步采样prefix且最终SHA必须等于历史实际报告；新训练逐epoch及末尾核同prefix，classifier init、split与neighbor cache SHA错即technical failure。固定同图排除、fit gallery，不重GMP/SAM3/token/pseudo/proposal/bank成员。
+
+新诊断用进程内只读observer捕获原classify_queries返回的全部21类production class_scores，不改变返回值或分类规则，finally恢复函数。Signed=score(内部伪标签正确类)−最强错误类；correct rank用原np.argsort(scores)[::-1] tie规则；保存signed mean/median/positive/p10/25/50/75/90与rank1/<=2/<=3/<=5，保留旧raw margin。复用E0/E3/E5只在原selected checkpoint对应导出向量上补诊断，预测/Top5/NN25须回归完全一致，replayed raw margin maxabs<=1e-7单列，保存的旧raw margin原样复制且E0五箱逐位固定，不用候选或重评边界改箱。新9训练50epoch全保存分数/权重，仍production balancedK25/top5/search2/center.2宏准确率first strict max选epoch，不按signed或VOC选模。
+
+全部run对同seed E0和A两种reference保存配对指标、五箱N/救损/net/signed变化、完整rescued/damaged IDs与正确类/最强错类分数、全confusion flow及top20 changed flow，不只挑成功。A−R_S05是唯一SupCon权重对照；固定.25下算B−A/D−C、C−A/D−B及Bank/Preserve主效应与两等价interaction式（仅算术一致atol/rtol1e-12）。low-bin准确率和high-bin damaged的factorial效应用E0共同分箱；damage正效应表示更多损伤。Bank方向字段按用户B−A四条件，D−C另外核；Preserve两个环境mean方向和signed方向分别列出，不将固定矩阵解释为普遍因果定律。
+
+14个本地纯NumPy新指标/固定箱/全部错误样本/交互算术测试已无skip通过，本地无Torch；真实seed42 smoke尚待Slurm，不能把本地测试当GPU或质量结果。计划432已接受旧code+8新补丁=440冻结记录，原代码/指标/权重不覆盖。独立chain为CPUreferences1V100quota/CUDAhidden6CPU24G12h→GPUtechnical6h（14无skip/输入梯度/E5组合loss与梯度等价/三新arm各2×3 smoke）→train9array%3各1V10048h→CPUsummary12h→独立audit12h。CPU角色仍占V100配额，不称零GPU。实际manifest/JobID/状态只以work_state/actualledger为准；已有guard/JobID不得重复注册/提交或手动verify活audit。
+
+本批严格禁止VOC GT/segmentation/独立test/跨数据集/新架构/权重搜索/Round2/自动主线部署；此前另授权的第99节VOC任务按原链独立运行，不纳入本研究反馈。失败留attempt、仅停本ledger未启动依赖；科学修复新版本+针对probe，不能改冻结断言；纯审计/报告修复先旧job终态无allocation，再新外层文件不重训练/检索/GT。用户暂停取消只安全停本批和监测，不自动恢复，不动其它实验。
+
+每run保存config、checkpoint或原权重引用、log、epoch CSV、selected完整score/rank NPZ、perclass/bins/signed/flow CSV、全部rescued/damaged JSONL、runtime/manifest/独立acceptance；最终factorial_summary/effects/signed_margin_summary CSV及analysis回答附件8问。独立accept passed+auditC0后小文件逐SHA下载、独立可读分析、小归档proof回远端核SHA，备份旧manual并CAS同步。原复用训练成本与本轮额外内部重评成本分开，不将省略旧旁路5NN/.4诊断带来的总wall差异归因loss速度；整体最早start至最晚end wall不累加并行，Torch allocated不冒充驱动整卡峰值。无论正/平/负固定批到此停止，只在完成独立验收归档后一次最终结果通知，不自动追加VOC或其它研究。
+
+### 100.1 首批接口失败、安全清理及同科学配置的新版本恢复（2026-10-25）
+
+旧版本retrieval_aligned_projector_factorial_20261025_130000的references3801463实际FAILED1:0/2:24；failure SHA0ef138ca30ee40426973e2f34d016f74f08a994ea00afbf9dfc3ebf0c8b3c3f6，日志SHAf7d0942b75e7fdae5a1238e1477c508398de56b353a58c55e8e513730cb80b1d。原因是verified返回NPZ bytes，但运行时把bytes直接交给期望path/file-like的OLD.load_arrays，NumPy报embedded null byte；不是loss方法质量结果。旧snapshot/manifest/guards/log全保留；仅本ledger尚未启动的technical3801464、train3801465_0–8、summary3801466、audit3801467共12child已CANCELLED且Elapsed0，无活allocation/lock。9新训练没有在旧attempt中开始，也未重训E3/E5。
+
+只在新版本runtime中把这一处NPZ bytes包为io.BytesIO，其余runtime字节完全相等（patch SHA5fd932d246c2f1375b1f6bb890d40ed01901eced7f7ef6c787c3ec3c9944d329）；protocol仅改version值。旧原文保存在recovery_sources_002/old_runtime_preserved.py。单独真实Slurm NPZ probe3802284已COMPLETED0:0/59秒，CPU执行wall8.326694250107秒；报告SHA0c069b5b1bf97049f64cfe9042124736325196ed5b4d16927de7443207fc59e1，复现原错误后import实际patch模块，6941行原E0seed42已选query的全部7数组在buffer/path两种读法下逐值完全相同。该probe不检索、不加载modeltensor、不训练、不读GT/token或重GMP；分配1V100配额6CPU24G30min但CUDA隐藏，不能称零GPU资源。report/job/log/guard及原失败3小文件均已本地SHA核，local_probe_acceptance_002只接受接口probe，不是正式研究完成。
+
+唯一当前版本retrieval_aligned_projector_factorial_recover_20261025_150000：run=HPC ROOT/experiments/retrieval_aligned_projector_factorial/版本，audit=ROOT/experiments/hpc_launch_audits/版本，weights/projector_loss_factorial/版本，logs/projector_loss_factorial/版本。manifest SHA153cab3a695c6d39d637c5719ddc4e02de0cdbebdf3061a7212f029a836581e4，bindinga3d7f5b1d25d6e5ced2a15760a0c533b7e683397621148b967b1abedbc38c606，440冻结records=438原字节不变+runtime接口/protocol.version两patch；438包含原接受432及本研究其余新文件，production core、数学loss、架构/alpha/tau/权重/seed/初始化/采样/数据/成员/分箱/选模/所有科学断言均不变。保留原失败manifest/failure及独立probe/job为anchors，注册quota实际余203722620928字节。local_registration_verification_002逐字段比较全部科学设置及440SHA，local_launch_verification_002核实际ledger/resources/依赖；两者只是inputs verified，不是最终独立accept。
+
+实际唯一新链references3802712→technical3802713→train3802714 array0–8%3→summary3802715→independent audit3802716；新live边全afterok，root提交前已核真实probe C0及旧ledger无活allocation。资源仍为CPUreferences/summary/audit各1V100配额6CPU24G12h、CUDA隐藏；technical1V1006CPU24G6h；每个train1V1006CPU24G48h。已有JobID/guard不得重提、重注册、上传修改科学snapshot或手动verify活audit。3新recipe×3seed仍只9完整训练，原E3/E5/E0仅复用selected结果；没有受第99节VOC结果影响而改变任何配方或选择规则，本批仍无VOC GT/分割/独立test/自动promotion。
+
+最近已核历史快照为2026-10-25T08:03:59.705663Z（北京时间16:03）：references RUNNING4:43/c2v100m2-7，其它12child等待依赖。它不表示当前实时状态，也不表示新GPU技术测试、9训练或新质量结果完成；后续只以本plan/work_state与新V实际ledger/proof为准。local_control_recovery_002与quiet validate_startup_002明确新V，原001仍保留；startup须新technical完整C0/14无skip/真实梯度与三新smoke通过，首三A seed实际epoch1 score/checkpoint及Slurm/proc/GPU_UUID验收后只保存小proof，用户要求final-only不重复启动通知。
+
+另有一次本地preupload手抄ANSI断行SHA变65字符被assert拦下，recovery_preparation_failure_003保留；无remote请求/manifest/JobID/科学计算，已改为实际文件程序化SHA及16字符输出校核。原所有历史失败、source旧内部gate及参数边界不改。科学失败先日志、只安全取消本新ledger未启动依赖；科学修复必须新version+真实小probe，不能改运行snapshot或放宽assert。固定批完整独立accept+auditC0后才小SHA下载/8问分析/归档/角色墙钟/本节最终更新；正平负都停止，不自动追加VOC或研究，不改主线/其它批/个人queue。
+
+
+### 100.2 固定loss矩阵完整独立接受与最终归档（2026-10-25）
+
+本节最终事实覆盖100–100.1历史运行快照。恢复版本retrieval_aligned_projector_factorial_recover_20261025_150000全部12科学child与独立audit3802716实际COMPLETED0:0，9新训练全部完成，9个历史selected模型只作保存向量诊断、不重训。独立completion_acceptance_001.json status passed、binding a3d7f5b1d25d6e5ced2a15760a0c533b7e683397621148b967b1abedbc38c606，SHA 9a08ba8a4afd61b9eefc89d18899fcc7bf5ba5716648a966ee66be70087130ed；审核2576唯一文件/2645813355字节，原科学断言未放宽，未重训练/检索/GT/bootstrap。manifest SHA 153cab3a695c6d39d637c5719ddc4e02de0cdbebdf3061a7212f029a836581e4，440冻结科学记录仍438原字节加两修复，旧130000失败/cancel/probe历史完整保留。
+
+| 组 | Top1 seed42/123/2026% | mean±sampleSD% | signed mean |
+|---|---|---|---|
+| E0参考（复用） |98.732171/98.775393/98.775393|98.760985±0.024954|0.652263|
+| R-S05原E3（复用） |98.717764/98.746578/98.804207|98.756183±0.044015|0.709046|
+| A CE+.25SupCon |98.804207/98.717764/98.818614|98.780195±0.054545|0.779080|
+| B A+.25Bank |98.861835/98.804207/98.847428|98.837824±0.029991|0.803489|
+| C A+.10Preserve |98.847428/98.703357/98.833021|98.794602±0.079348|0.753552|
+| D 原E5 Bank+Preserve（复用） |98.861835/98.804207/98.847428|98.837824±0.029991|0.788495|
+
+附件8问结果：①A−R-S05 mean Top1+0.024011910pp、2/3正，signed+0.070033798，macro−0.002384360pp，SupCon减半收益小且seed混合。②Bank B−A+0.057628584pp、D−C+0.043221438pp，均3/3 Top1正及3/3 signed正（分别+0.024409849/+0.034943098），各seed高箱pairwise damaged均0，两个Preserve环境均满足注册四条件；Bank平均主效应+0.050425011pp，不与按B−A定义的direction字段混称。③Preserve C−A+0.014407146pp、2/3正，D−B=0pp，signed分别−0.025527347/−0.014994099、均3/3负，不支持稳定独立收益。④Top1 interaction mean−0.014407146pp、sampleSD0.028814292、1/3正；signed交互+0.010533249，不能称准确率正协同/显著性。⑤Bank最低箱Top1差mean+6.882429740/+6.411049268pp，N=55/45/49；最低箱净救回10/9个query×seed决定，全部query净12/9，其它箱仍有抵消，不是独立20823样本或mIoU贡献。⑥五主配对高箱pairwise damaged均0/0/0，未见高置信伤害，但无法将零损伤归因Preserve额外保护。⑦signed与Bank同步提高，Preserve两环境下降；macro与NN25并非每seed都提高，完整五箱/每类/错误ID/flow与rank/quantile保留。⑧可将较简单Bank-only B列为另行授权固定VOC验证候选，本批不追加执行、采用主线或改旧gate。B/D相同Top1不代表逐预测相同，seed42有1个query类别不同（其它seed0）。
+
+所有结果仅同6941 query/seed的内部伪标签development检索，全部按同holdout生产macro选epoch，不是VOC mIoU、独立test、跨数据集或普遍因果结论。旧E5+0.076838pp未过旧0.10pp门槛结论保持；本矩阵不依据第99节VOC结果修改loss/alpha/tau/seed/选模或分箱。固定结构/同seed基座/采样/初始化/数据/成员/SHA/teacher/全同图排除均保持。没有新架构、参数搜索、Round2、主线部署/GitHub/ZIP。
+
+Slurm elapsed：references8:28，technical13:30；9训练按array0–8为18:05/29:43/33:31/17:01/19:08/19:29/17:49/35:35/18:35；summary20:45，audit38:08。恢复full科学allocation最早北京时间15:59:16至最晚18:44:35，9919秒=2:45:19；包括旧失败/probe/恢复等待间隔的科学allocation时间窗13:09:02至18:44:35，20133秒=5:35:33，不累加并行、不冒充连续计算，也不包含之后本地下载/分析/归档耗时。原references失败2:24，接口probe Slurm59秒/实际执行8.326694250107秒。新9完整训练45000step与technical18smoke step分开；复用9模型new_training_steps=0，历史原训练成本不当本轮重训。最大保存Torch allocated107.3828125MiB，非驱动整卡峰值；CPU MaxRSS为Slurm采样。CPU references/summary/audit/probe仍分配V100配额但CUDA隐藏。optimizer block含采样/传输/前后向/更新，内部评估含投影/检索/保存与SHA，不能拿省略历史5NN/.4旁路后的总wall宣称loss加速；无新GMP/独立forward benchmark。
+
+科学small_result_catalog_001.json SHA 2b3c94f993c57f0d350c0f512c46c0ad63c5cd6e4c87c02387ec5765678c5d22，551小文件33479404字节均逐size/SHA下载到experiments/hpc_results/retrieval_aligned_projector_factorial_recover_20261025_150000/verified_20261025，另有12外层proof记录。未下载大checkpoint/raw/token/全50epoch-score树。独立analysis_report.md SHA 3dbcad92be2130fde74006fa4f77e5b34e0954607dc1941449820573c4234862；download_verification_003.json SHA f5be8be2f745829ab1044f9dc96fc91c9f8b041f5647775a6411ecf492a12eb6；local_archive_proof_004.json SHA 67835285464c36032f381a5b2a9ea905bd09e518718ccffcb344e0bedf1f4203。六analysis文件、下载proof与local archive proof回当前run逐远端SHA核，最终roundtrip与manual_sync_003另存证明；不改冻结科学code/metrics/源历史。当前固定批无论正平负均完成即停，最终一次8问结果报告后仅删除projector-loss-factorial-v1监测，不重启其它已完成批。
+
+
+## 101. 椅子／沙发局部混淆的检索类分数间隔训练（2026-10-25新授权）
+
+用户在讨论真实检索分差训练后明确“尝试一下你的想法，做做试验”，本批计划experiments/plans/retrieval_score_margin_v1。当前独立版本retrieval_score_margin_recover_20261025_230000；run=HPC ROOT/experiments/retrieval_score_margin/版本，weights/retrieval_score_margin/版本，storage/predictions/voc/版本，logs/retrieval_score_margin/版本，audit/code冻结451records=已接受loss恢复版440逐SHA克隆+9独立代码/测试/计划+2个已接受VOC复用模块。production src/config、旧模型/指标不改。manifest SHA5b6146b2856f6cdadd410b3de52b010229dbfd42ca41ce2f13a1f62555073142，binding3b0becee9718bef0748cb31ac7742e22dcc4dae42883e012b379ba6f74a714e2，真实GPFS group/data余199712686080字节，最低保留12GiB。
+
+A_supcon复用第100节R_S025三seed（CE+.25SupCon）；B_fixed_bank复用R_S025_bank三seed（另+.25Bank）；C_score_margin只新增42/123/2026三个完整训练（CE+.25SupCon+.25Rank）。A是同架构loss控制，不是原两层生产E0；E0仅提供历史固定内部五箱。全部同历史同seed冻结MLP0、256-64-256/GELU残差alpha.1/A2zero、同CEhead初始化/5000步采样/AdamW.001/wd.0001/cosine50×100/8类×4不同图/SupCon温度.1/BGnegativeonly/projectorclip5与FP32/TF32off。原34880含10569BG、27939fit/6941hold、8466/2116图、原raw/ID/order/class/split不变，不重GMP/encoder/SAM3/token/pseudo/proposal。只三新全训练，六原selected模型不重训。
+
+Rank=mean softplus((.05+最高错误类检索分−正确伪标签类检索分)/.07)，系数.25，无Preserve或固定teacher Bank项。score按原global210候选/类内top5mean/.2中心/缺类中心fallback，所有21类可竞争。每epoch开始将全27939fit用当前模型投影并detach为图库，训练query保持梯度；从邻居和类中心中完整排除同图所有成员。明确为按epoch更新的滞后图库训练近似，不是每step实时重投影全库。最终内部评估/推理始终当前模型匹配库；C−B是两种辅助目标及监督方式的整体对照，不归因某一个margin标量。
+
+Ranking可靠性仅用冻结历史MLP0在fit内leave-whole-image-out后top1等于伪标签且signedgap>0，前景anchor限定；不按VOC或chair/sofa特设规则，所有类同规则。不是GT可靠性证明，负样本仍可能有伪标签噪声。此规则不筛CE/SupCon或库成员；同图排除也覆盖中心。保存每seed eligibility/每类覆盖、每epoch图库SHA、实际负类对计数及每步eligible trace。没有heldout/VOC标签参与训练配对。全部50epoch按原production balancedK25/top5/search2/center.2内部macro firststrictmax选epoch，不按chair/sofa、signed或VOC选模；margin.05/tau.07/权重.25固定，不扫描参数/架构/seed。
+
+唯一实际afterok链technical3805064→train3805065 array0–2%3→predict3805066 array0–8%3→evaluate3805067→independent audit3805068。14科学child+1audit已有guard/JobID不可重注册/重上传科学code/重提交或手动verify活audit。technical1V100/6CPU24G6h必须8NumPy+6Torch测试无skip、三seed真实score对原production（完整同图排除）at/rtol2e-6/1e-6且Top1exact、非零input/residualA2梯度/基座冻结、fit可靠性、Cseed42两epoch×三step探针、6native HCR历史PNGpixel exact后C0，才进入3正式训练。当前仅本地8NumPy测试通过，不能把登记/提交当GPU测试通过或正式训练已完成；实时状态以work_state和actualledger为准。
+
+每train/predict各1V100/6CPU24G48h，一卡一worker。CPUevaluate/audit各1V100资源配额/6CPU24G12h并CUDA隐藏，不称零GPU分配。所有compute只Slurm；登记读取源字节/真实quota不解码GT/modeltensor。原Paramiko依赖本地AttributeError在认证前停止，已使用固定ED25519的native SSH/SCP，成功连接不当身份失败；私钥只本地不打印上传。GPFS/SSH等待或D状态不当作失败。
+
+三个固定arm九模型全部做原pool/native1280D query/center.2/单库K25/top5/search2/mixture.2/NMS/HCR的clean+HCR对照，R3关闭；本新批明确VOC授权不改历史VOC=false/gate。严格factory reload须复现6941已保存selected classscores at/rtol1e-6及prediction/top5/NN25exact；source loss批没有34880-row历史导出，不能虚称此类回放基准，本批重新投影匹配导出但不重GMP。18组26082新PNG全SHA commit后才本批一次1449GT解码。内部Top1/signed/pairgap/五E0箱/全错误ID与最终18CM/21IoU/BGFP/FN/wrongFG/chair→sofa/sofa→chair分开，全部三seed逐值/mean/sampleSD/配对，两个混淆方向单列，不用平均中心距离或全局Top1代替分割结果。VOC只为已查看development，无新增bootstrap/独立test声明。
+
+失败保留attempt，只安全停本ledger未开始依赖；科学修复新version+针对小probe，不修改运行snapshot或放宽断言。暂停/取消只停本批和监测，不自动恢复，不动其它实验。完整acceptpassed/exactbinding且auditC0后，smallcatalog小结果逐SHA下载、独立分析和roundtrip归档、角色/实际Torch峰值范围及整体最早start至最晚end墙钟（不叠加并行）更新本节，manual同步前备份实际旧SHA并CAS，冲突下载merge不覆盖98–100等其它章节。当前launch小凭据本地独立核SHA/451source/全部afterok及资源，仅launch_inputs_verified不是completion。无论升平降固定批结束，不追加研究、部署、主线更改/GitHub/ZIP；最终报告归档后只删除retrieval-score-margin-v1监测。
+
+
+### 101.1 首版导入失败与依赖闭包恢复
+
+旧版本retrieval_score_margin_20261025_224500 technical3804903实际FAILED1:0/32秒，在runtime顶层导入tools.mlp_projector_voc时因源快照未含该模块失败；尚未进入14GPU目标测试、真实分数/梯度探针、任何新全训练或预测，没有方法质量结论。其余train3804904_0–2、predict3804905_0–8、evaluate3804906/audit3804907共14个自有PENDING依赖已全部CANCELLED、Elapsed0，精确Slurm无活allocation/lock；源449code/manifest/jobs/日志/取消记录全保留，不原地改旧版本。
+
+新recover230000快照451记录=旧449除protocol.version外448原字节不变+1协议版本patch+2依赖；从已接受mlp_projector_voc_20261025_120000冻结439源码逐SHA补齐tools/mlp_projector_voc.py及tools/mlp_projector_voc_core.py，不读取其VOC指标反馈训练。loss、margin/tau/weight、teacher可靠性、数据/划分/采样/模型/seed/数值断言全部不变。独立Slurm依赖probe3804959 COMPLETED0:0/53秒，report SHA b50b7ce13861fe241736db11cd142108aae999d09502670a4cbe55094df0ab98，实际4模块都来自新451快照、8NumPy测试无skip，execution wall48.260908842秒；不加载modeltensor/GT/token、不训练/GMP，分配1V100配额但CUDA隐藏。只证明导入闭包和指标接口，不冒充真实GPU数值/质量通过。probe报告/job/451克隆与旧终态小凭据本地SHA核后才允许新full登记，注册逐字段核科学设置与旧完全相同，再唯一新afterok链。当前主实验仍须新technical14测试/真实梯度/native回放完整C0后才进入三新训练，不放宽原断言。
+
+
+### 101.2 完整独立接受、三seed结果与最终归档（2026-10-26）
+
+本节最终事实覆盖101/101.1初始等待快照：当前retrieval_score_margin_recover_20261025_230000的14科学child与独立audit3805068已全部COMPLETED0:0。technical3805064 C0/9:17，14目标0fail/error/skip、三seed真实检索score/非零input与A2梯度/冻结基座、C42六step smoke和6份native HCR历史PNGpixel exact通过后才进入正式训练；三seed回放maxabs分别1.341104507e-7/2.086162567e-7/1.266598701e-7，Top1exact，未放宽原2e-6/1e-6界。正式3新模型各50轮/5000step、sampler/classifier init/冻结基座签名通过。独立completion_acceptance_001.json status passed、binding3b0becee9718bef0748cb31ac7742e22dcc4dae42883e012b379ba6f74a714e2，SHA7cfbb6680a4671c1da8b09be719e1f148c65e5cfc820a5dc9ce4ce9d2925c9ee；审核27223唯一文件/1134231502字节、18CM/18逻辑预测组/26082真实新PNG全部SHA commit后才本批一次1449GT。manifest SHA5b6146b2856f6cdadd410b3de52b010229dbfd42ca41ce2f13a1f62555073142、451冻结科学records未改。没有新failure/lock，不再运行任何科学任务、startup validator或手动审核；早期未完成的独立startup通知被最终完整接受覆盖，不补造已退出worker存活。
+
+| Arm | HCR seed42/123/2026 mIoU% | HCR mean±sampleSD% | clean mean±sampleSD% | HCR chair IoU mean±SD% | HCR sofa IoU mean±SD% |
+|---|---|---|---|---|---|
+| A_supcon（复用） |86.155220/86.239065/86.215781|86.203355±0.043281|85.532678±0.070937|61.563803±1.229596|64.084577±2.114792|
+| B_fixed_bank（复用） |86.023192/86.414762/86.191888|86.209947±0.196408|85.545247±0.040143|60.624174±1.475280|64.969616±2.342933|
+| C_score_margin（三新训练） |86.901832/86.496918/86.218930|86.539226±0.343411|85.721423±0.194397|64.133090±3.074224|64.980536±0.666753|
+
+HCR C−A mean+0.335871040pp、pairedSD0.377821914，逐seed+0.746611434/+0.257853287/+0.003148399pp；C−B mean+0.329279229pp、pairedSD0.476557604，逐seed+0.878639754/+0.082156356/+0.027041577pp，均3/3正，但seed42贡献最大、2026很小。B−A mean+0.006591811pp、仅1/3正。clean C−A+0.188745076pp（2正/1零）、C−B+0.176175628pp（2/3正）。A是同残差架构CE+.25SupCon控制，不是生产两层E0。历史第99节E0生产检索选模对照HCR均值86.620258316%，当前C相差−0.081031862pp、1/3正；只是当前固定批接受后报告的历史参照，没有新增第4组或用其结果调本loss，不能宣布超过E0、刷新主线或采用新方法。
+
+目标互错HCR C−A平均chair→sofa −21366.333、sofa→chair −22323.333像素，合计−12.628142%；C−B −12121/−36499.667像素，合计−13.855924%。但C−A seed2026的sofa→chair由12366增到24553（+12187），chair→sofa不变；相对B的目标互错减少全部来自seed42，123/2026两方向均不变。C−A chair/sofa平均IoU+2.569287/+0.895959pp，均2/3正；C−B chair+3.508917pp、3/3正，sofa仅+0.010920pp、1/3正。此前大难例2011_000661在本批九模型HCR保存逐图CM中的chair→sofa均仍132003像素，未纠正。平均mIoU有开发集收益不代表跨seed稳定解决椅子/沙发混淆，更不能由图像CM推断具体proposal/owner归因。
+
+HCR错误成本C−A均值BG_FP −160801.333、FG→BG FN −5084.333、wrong_FG −44217像素；C−B分别−163521.333/+17853.667/−56984，C对B的FG FN三个seed均增加。C−A wrong_FG在2026增加12189像素。全21类中C−A car平均IoU−0.519565pp，C−B car−0.615001pp；没有隐去类伤害。clean C−A三seed BG_FP完全相同，HCR才下降，完整门控/栅格排序也参与最终差异，不将全部mIoU收益单归因两类类别翻转；像素子项不相加冒充mIoU贡献。
+
+内部伪标签Top1 mean±sampleSD：A98.780195±0.054545%、B98.837824±0.029991%、C98.760985±0.049908%。C−A mean−0.019210pp（1正/1负/1零），C−B −0.076838pp（三seed负）；高margin E0固定箱damaged均0/0/0，但最低箱C−A mean−1.818182pp、C−B−8.700612pp。chair/sofa内部694query/seed，互错合计A92/B89/C94个query×seed决定，C对B pair signed gap三seed均降低，C对A均值也略降。全类signed均值A.779080/B.803489/C.733725。因此没有证据证明两类整体检索空间被稳定拉远，不能由VOC mIoU正向倒推机制成立。固定margin/tau/weight、teacheragreement可靠性与epoch-lag图库是整体干预，未独立消融各组件。
+
+训练确实遇到这组竞争：从保存50epoch负类计数求和，chair anchor事件7355/7345/7513次中negative=sofa 7201/7205/7350次，sofa anchor7688/7643/7553次中negative=chair7062/7170/6925次；是重复采样事件，不是独立region数。可靠chair anchor1913/1897/1909除以1976fit，sofa693/694/698除以711fit；全类覆盖和错误ID完整保留。teacher/pseudo一致不保证真值可靠，也可能排除有用难例；没有GT质量筛库或观察VOC后改参数。C按内部macro firststrictmax选epoch1/23/5，42为100次更新后的第1轮模型，不是zero-init，也没有VOC选模；所有50轮已完整训练。内部query与VOC不同监督、同holdout多轮选模均为development边界，无独立test/跨数据集/新CI/bootstrap声明。
+
+角色Slurm elapsed：technical9:17；train42/123/2026为20:49/31:58/31:58；predict按A42/A123/A2026/B42/B123/B2026/C42/C123/C2026为10:26/6:31/6:37/11:02/1:51/1:46/2:29/2:56/2:17；evaluate5:44，independent audit6:28。当前full科学allocation北京时间2026-10-25 23:06:03至10-26 00:17:05，4262秒=1:11:02，不叠加并行。旧失败/依赖probe/恢复等待间隔计入的allocation窗22:42:45至00:17:05，5660秒=1:34:20；不把之后本地等待、下载、分析、归档时间冒充科学allocation耗时。3新full共15000step，technical另6smoke step；六source模型新训练step=0，旧成本单列。C训练loop1242.290/1571.377/1575.474秒，optimizer block153.117/179.653/179.188秒，internal eval1022.530/1308.921/1313.834秒，gallery refresh62.611/81.464/81.106秒；宽口径区别清楚，不宣称loss-only加速。当前保存Torch allocated最大79.412109375MiB（technical进程），三C训练各79.379394531MiB，非整卡驱动峰值。CPUevaluate/audit/probe仍分配V100资源配额但CUDA隐藏；MaxRSS为Slurm采样。
+
+161个scientific smallcatalog文件45564015字节，catalog SHAeddc339354979661fd5d44cc0a29b41511e2d89b59aa9394cf7ca5e1aa35dd45；补3个epoch_metrics CSV及资源/来源/旧failure小凭据后177唯一小文件45928629字节全部逐size/SHA归档到experiments/hpc_results/retrieval_score_margin_recover_20261025_230000/verified_20261026。没有下载大checkpoint/raw/token/26082PNG或全50epoch-score树。独立analysis_report.md SHA6f742a9a74e0303ad3fe069d61c0a91f47fd1d4d177efe22c11a89684ce06996，download_verification_003 SHA95adc54c8d634f15f2be734c3f02bd67486f694188cc49005d15bf87a3cbea38，local_archive_proof_004 SHAb5c92cb3165645a3c3e4ac721a346822f07b2c40097648203ded7e7a38f58903。十一analysis文件、下载proof与localarchive proof回当前run并逐远端SHA核；archive_roundtrip_verification_004和manual_sync_003另存。分析仅保存指标/计数加减、单位换算与逐图CM定位，不重GT/训练/检索/推理/统计重采样；报告曾只纠正包含零变化类的排序标题并加保存CM个例检查，旧报告草稿保留，没有SCI结果变动。原224500导入失败32秒/14cancelled0秒、依赖probe3804959 C0/53秒、所有签名/快照/日志历史保持，现无新科学失败。
+
+最终结论：当前固定同架构对照有mIoU开发信号，但目标混淆的跨seed稳定修复及全局空间分离机制不成立，且仍低于历史E0对照均值。本固定批完整接受归档后停止，不自动采用主线、搜索参数/seed/架构、追加Round2或其它研究；一次最终结果通知后只删除retrieval-score-margin-v1监测，不动其它实验。
+
+
+## 102. MLP前后库过滤位置四组三seed（2026-10-26用户新授权）
+
+独立计划experiments/plans/bank_filter_placement_v1。固定A前10%后0、B前0后10%、C前10%后10%、D前5%后5%，各seed42/123/2026，背景不删；每次仅按当前空间内距本类FP32平均中心的欧氏距离，删除floor(N*ratio)最远成员，保留余下原顺序。前后各10%约累计19%，各5%约9.75%，逐类实际floor人数单独保存。只比较用户这四组，不增加邻居过滤/随机删库/新loss或激活组。
+
+普通GMP与两层1280-512-256 GELU/输入输出L2、CE+.5SupCon、原50×100/AdamW.001/wd.0001/cosine/原图片划分，生产balancedK25/top5/search2/center.2 macro firststrictmax选epoch，新增后过滤不进入选模；原单库/提议/NMS/HCR，R3关。C始终共享A同seed模型。只有恢复的前10%输入逐ID及数组bitwise等于已接受E0，A/C才复用旧模型、B/D六新训练；否则A/B/D由同一恢复源重新训练九个，C共享A。这个分支仅由源身份决定，不看内部或VOC成绩，原历史分数不覆盖。
+
+唯一目标full版本bank_filter_placement_20261026_163000，ROOT=/data/home/zhengyuan/25-nd/1010；run=ROOT/experiments/bank_filter_placement/版本，audit=ROOT/experiments/hpc_launch_audits/版本。full 439已接受VOC源码clone+8patch共447记录已准备并逐SHA放置，尚未full注册/提交。唯一有效注册/提交外层为audit/prepare_remote_002.py。来源是既有主线10582张逐图未过滤GMP缓存，不把34880已过滤库冒充未过滤源。
+
+源检查001 Job3812776 FAILED1:0/2:04，在第118张2007_003778发现旧缓存绑定pseudo与当前已接受canonical pseudo PNG字节不同，原图字节一致；未进入full训练/GT。002 Job3813009 FAILED1:0/5:44，导入原src时cwd不对导致configs/cls_voc21.txt不存在，未进入正式MLP训练/GT。001/002源码、pins/guards/jobs/failures/log全部保留，不重跑旧attempt，不当方法质量失败。
+
+新source003仅修执行cwd和独立输出文件名，Job3813054唯一实际提交；最近只读快照RUNNING4:21/c2v100m2-7，不代表源完成或正式训练启动。003逐SHA核缓存和原build完成凭据；伪标签字节不同时先比像素，像素同保存别名证明，否则只用原canonical pseudo和已有FP32 token按原hard-center/rho.1/双L2 GMP恢复该图原区域。无新SAM3/token生成/标签/proposal，无GT解码。前两图真实GMP回放数值界maxabs<=1e-5/L2<=5e-5/float64cos>=1-1e-8固定，不放宽科学参数。仅source003 reportpassed且SlurmC0、小proof SHA核完才能full唯一注册并提交afterok链prepare→technical→train6或9%3→predict12%3→evaluate→independent audit。JobID/guards存在不重复提交，不手动verify活audit。所有科学只Slurm，一GPU一worker；CPU角色如分配V100配额则隐藏CUDA并如实报告。
+
+13本地NumPy目标测试无skip通过，不代替真实GPU验收。full需旧E0三seed×两图×clean/HCR共12PNG像素精确回归、新训练arm各两epoch×三step smoke/非零有限梯度后technicalC0，才正式训练。4×3×2×1449=34776新PNG/24逻辑组全SHAcommit后才一次1449GT，保存24逐图CM/21IoU/BGFP/FN/wrongFG/chair↔sofa；VOC为看过development，不按其结果调比例/epoch/增加arm。完整独立acceptpassed/exactbinding与auditC0后小catalog SHA下载、独立分析/资源/归档和最终结果补记；无论正平负固定批结束，不自动主线/部署/GitHub/ZIP。
+
+专属pinned native controller55817和本plan/local_control.py/native_controller.py；先读work_state.pending，原请求未CONTROL_DONE不发第二mutation，初始write若带DONE须即时清pending。科学afterok自主推进，正常健康等待静默，新失败/必需行动/最终归档才通知。bank-filter-placement-v1每15分钟仅跟进本批，完整归档一次结果后删除；暂停/取消立即仅停本批及监测，不自动恢复，不动其它实验。后续手册同步保留真实remote旧版本并CAS，冲突先merge保留其它章节。
+
+
+### 102.1 源独立接受与正式四组链唯一提交（2026-10-26）
+
+本节覆盖102初始等待快照。source003 Job3813054已COMPLETED0:0/1:08:52，batch/extern也C0；10582张、37571个未过滤region、10569BG，35张在canonical pseudo实际像素不同后仅用原标签及已有FP32 token按原GMP恢复。两真实原GMP回放maxabs=L2=0、cos=.9999999999999998，原界未放宽；全类前10%保留34880 ID与历史精确，但向量非bitwise，全部类最大分量差2.8893351554870605e-5、最大L2 4.9505967762668364e-5，这是选择不复用历史模型的依据，不冒充两图回放界。report003 SHA6855e17b5470a21a6a14441912d85866abcb9a736234bf37e476943dc96de7c2、catalog003 SHA830c04a8b6bde10973a5e80fd4d0379bed7cf3300d8957c088db4056df983bf31及job/guard/log已逐远端SHA下载，local_source_acceptance_004 status source_accepted_not_full_completion。
+
+因此按预注册源身份分支A/B/D各三seed，共9新训练，C共享本批新A；旧E0分数不填入新A，历史模型/输入/结果不改。full已唯一注册，447冻结code=439已接受VOC源逐SHA克隆+8原科学patch；manifest SHA3b47387946755e6a2ee2e892258db88911afc835a8c9efeecb0569b56fae1f28，binding02c30d21d5900261d7b1676b1154d0137f06484cf080bcb5c738f25dc58c3a4d，真实注册quota reserve 197076549632字节。未执行outer002因其错误检查历史failure002缺失；保留该外层并在注册前新建prepare_remote_003.py，只修指针到003并添加真实source/localaccept/self SHA gate，8科学patch未改。唯一有效full外层为audit/prepare_remote_003.py，不能再register/submit或上传运行code。
+
+全部6个sbatch实际成功：prepare3814050→technical3814051→train3814052 array0-8%3→predict3814053 array0-11%3→evaluate3814054→independent audit3814055，所有live依赖afterok。24科学child+1独立audit，各1V100配额6CPU24G；prepare6h/technical6h、train/predict48h、evaluate/audit12h，prepare/evaluate/audit隐藏CUDA但仍分配GPU资源配额。实际jobs/launch_complete/submit.guard及catalog已小下载逐SHA，local_registration_verification_004和local_launch_verification_004只证明输入/实际提交，不是完整接受。
+
+2026-10-26T11:28:01Z（北京19:28）真实快照prepare3814050 RUNNING43秒/c2v100m2-3，开始北京时间19:27:18；technical、9train、12predict、evaluate、audit均Dependency PENDING，无新failure/complete，尚无新mIoU。科学链afterok自主运行，不依赖监测轮询；完成仍需13目标无skip/12旧E0像素回归/真实smoke，34776新PNG先全SHA提交再一次1449GT，最终completion_acceptance_001 passed且binding精确、audit3814055 C0后才小结果归档/四组报告。现有guards/JobIDs禁止重提或手动verify活audit，异常先真实日志保留attempt，仅处理本ledger。
+
+专属native controller55817当前请求DONE；本地inspect_full_006.py只读本ledger状态/小日志/complete/failure。原监测bank-filter-placement-v1实际设置PAUSED，本轮保留暂停设置、不自动恢复；没有停止已提交科学链。后续以work_state当前pending/真实ledger优先，不能把本初始RUNNING快照当终态。手册同步只备份真实旧remote并CAS原子追加，保留98–101及别批内容。
+
+
+### 102.2 正式technical实现失败、针对回归及恢复版唯一提交（2026-10-26）
+
+本节覆盖102.1初始RUNNING快照。原full bank_filter_placement_20261026_163000的prepare3814050 COMPLETED0:0/16:13；technical3814051 FAILED1:0/10:24，于北京19:53:55退出。13目标测试0fail/error/skip已过，但真实smoke首轮保存row时dict(epoch,...,**metrics,...,queries=file)与metrics中的queries整数重名，TypeError: dict() got multiple values for keyword argument 'queries'；未完成整体technical，不算技术接受，更不是方法质量失败。9正式训练全部未开始，没有新VOC预测或GT。只精确取消本ledger 9train+12predict+evaluate+audit共23个PENDING，各CANCELLED0秒，核旧prepare/technical及所有batch/extern终态、squeue无本批活allocation、无lock；old failed_full_terminal_007 SHA7ec9587f603bedd3d2854df641a6c2139178b2fb2d3057724b7d344d6679bc6b及failure/log/cancel小文件已下载逐SHA核，旧447/code/manifest/jobs/guards/所有输出全部保留、不重跑旧版。
+
+独立恢复版bank_filter_placement_recover_20261026_201000，仅epoch记录中把原metrics查询数重命名query_count、queries继续保存文件身份；训练损失/梯度/过滤/数据/采样/选模/检索/断言完全不变。protocol只改version。runtime patch SHA2eab111fbdd4d2c54a7b32471ddc5851d56781136bafd1d6957e338527091919。真实Slurm定向probe3814370 COMPLETED0:0/22秒（batch/externC0），report SHA40c6779d6f38e151cf15775b0e6f096569798fe3cf7083f54946f0107157743b；读取原失败smoke实际6941条saved query、计算原指标并eval实际旧/新row AST，先复现旧重复keyword，再验证全部指标、查询数、查询/已保存checkpoint的SHA凭据和JSON roundtrip完全保留。只对metadata使用synthetic zero loss，占1V100配额但CUDA隐藏，未加载模型tensor/GT/token、不训练/检索/GMP；不把它冒充真实新smoke/质量完成。probe6小proof及catalog已本地逐SHA核，local_probe_acceptance_008只接受接口回归。
+
+恢复版已独立登记：447records=445原字节逐SHA克隆+runtime/protocol两patch，科学字段与失败版逐值一致，source003和所有原anchors保持；manifest SHA05fe1452b5f9391d1ace9860140ec602b0721b79d4995a90fa34ee1fc899f1f1、binding24fd3b473c65b3f32b78d35b12a080de46269d188d19ee9ea0094f318a5ce58d、quota reserve 195922378752字节。唯一prepare_recovery_remote_009.py已执行register和submit，registration/clone3小proof与actual jobs/launch/guard3小proof及catalog全SHA核，local_registration_verification_009和local_launch_verification_009是输入/实际提交证明，不是完成接受。原full保存在state.failed_full_attempt，primary已切恢复版，不能误查旧失败链。首次登记下载输出超过工具上限，仅控制台transport截断，随后按7个小chunk接收同一登记文件并SHA核，不改任何科学artifact。
+
+实际唯一新链prepare3814390→technical3814391→train3814392 array0-8%3→predict3814393 array0-11%3→evaluate3814394→independent audit3814395，全部afterok，24科学child+1audit。资源/时限与原矩阵一致：各1V100配额6CPU24G，prepare/technical6h、train/predict48h、evaluate/audit12h；CPUprepare/evaluate/audit隐藏CUDA但仍分配GPU资源配额。北京时间20:08:49快照prepare3814390 RUNNING13秒/c2v100m2-3，其余Dependency PENDING，无新failure，尚无正式9训练或mIoU完成。四组A前10后0/B前0后10/C前10后10/D前5后5、三seed及9新A/B/D、C共享新A完全保持，不追加任何组/比率/参数/seed/训练配方。
+
+现有JobID/guards禁止重新register/upload科学code/submit/audit或手动verify活audit。完整technical真实smoke/12旧E0像素回归仍须C0，34776真实新PNG全SHA提交之后才一次1449GT；最终completion_acceptance_001 passed/binding精确且audit3814395 C0才smallcatalog逐SHA归档、四组分析和一次最终报告。VOC仅development，固定批无论正平负停止，不改主线。专属controller55817按state.pending串行，旧DONE不空轮询；inspect_recovery_010.py只查新V。原监测PAUSED设置保留未恢复，不影响已提交afterok科学链；不动其它实验。后续manual只备份实际旧remote+CAS原子更新，冲突先merge保留其它章节。
+
+
+### 102.3 全部独立接受、四组最终结果与归档（2026-10-27）
+
+最终覆盖102–102.2所有pending/RUNNING快照：bank_filter_placement_recover_20261026_201000全部24科学child及independent audit3814395实际COMPLETED0:0，全部batch/extern也C0。technical3814391 C0/10:49，13tests无fail/error/skip、旧E0三seed×两图×clean/HCR共12份PNGpixel exact、A/B/D各真实2epoch×3step smoke通过；9正式MLP各50×100完整完成，C始终共享新A。34776新PNG/24组全SHA提交后才一次1449GT，独立保存CM/CSV算术核通过，completion_acceptance_001 statuspassed/binding精确，SHA4aca59dec2b9e583aaf9c68e3ecc11b89654591ac488ae92e947a6e934e34377，audit3814395 C0/37:09，36369唯一文件/3035523027字节实际校验。manifest SHA05fe1452b5f9391d1ace9860140ec602b0721b79d4995a90fa34ee1fc899f1f1、binding24fd3b473c65b3f32b78d35b12a080de46269d188d19ee9ea0094f318a5ce58d、447冻结records保持不变，不再重训练/预测/GT/审核/源GMP。
+
+| arm | HCR seed42/123/2026 mIoU% | HCR mean±sampleSD% | clean mean±sampleSD% | HCR meanΔA pp / 正向seed |
+|---|---|---|---|---|
+|A_pre10|86.833484/86.562251/86.465041|86.620258±0.190948|85.781213±0.144475|+0.000000 / 0/3|
+|B_post10|86.887088/86.996230/86.526122|86.803146±0.246038|85.914177±0.155192|+0.182888 / 3/3|
+|C_pre10_post10|86.714651/86.584001/86.228167|86.508940±0.251778|85.672062±0.131662|-0.111319 / 1/3|
+|D_pre5_post5|86.454314/86.673343/86.797858|86.641838±0.173926|85.796175±0.080516|+0.021580 / 2/3|
+
+B只MLP后删10%相对A只前删10%的HCR逐seed差+0.053604/+0.433979/+0.061081pp，均正，mean+0.182888pp；clean mean+0.132964pp、2/3正。C前后各10%与A同seed同权重，只追加后过滤，HCR mean−0.111319pp、1/3正；D前后各5% mean+0.021580pp、2/3正，近似持平。B比较同时改变训练成员与最终删库空间，不能把全部增益单归因投影空间删离群向量；不把正向development结果当独立test或自动采用。没有新增阈值/比例/seed/arm/损失/激活搜索。
+
+HCR chair IoU mean A64.297364/B62.327584/C62.806898/D62.077693%；sofa mean A64.133724/B65.167807/C64.059275/D64.070192%。B−A chair−1.969780pp、sofa+1.034083pp；chair→sofa三个seed均增加、平均+37012像素，sofa→chair均值+3811，两方向合计+40823。整体mIoU提高没有改善目标混淆，不称空间被稳定拉远。B−A BG_FP平均−24050.333、FG→BG FN−134868.667、wrong_FG+57669像素；chair/ship/tvmonitor/dog/train meanIoU分别−1.969780/−1.218089/−0.375450/−0.147697/−0.137739pp，完整21类与逐seed成本已保存，像素子项不相加冒充mIoU贡献。C−A BGFP/FN/wrongFG均值+13339/+25721.333/+28397.333；D−A+10244/−85877/+69371.667。
+
+未过滤37571成员，BG10569始终不删。A进MLP34880、后删0、最终34880；B进MLP37571、后删2691、最终34880；C进MLP34880、后删2421、最终32459；D进MLP36231、后删1275、最终34956。完整逐类floor人数/保留与删除ID/SHA均归档。没有保存逐query fallback调用数，不能捏造其频率变化。源恢复与旧34880ID相同但非bitwise触发九新训练分支；接受后只读本地保存CM发现新A六组与历史E0逐图CM及1449IDs完全一致，事后结果一致不等于复用旧模型或输入逐位相同。common-reference hold独立保存，不混合不同training population/hold人数的准确率。
+
+角色Slurm elapsed（数组按index顺序）：prepare: 0:08:47；technical: 0:10:49；train: 0:20:30, 0:32:27, 0:38:03, 0:33:41, 0:24:14, 0:24:46, 0:45:29, 0:21:27, 0:21:37；predict: 0:27:47, 0:28:54, 0:33:49, 0:07:22, 0:35:06, 0:30:52, 0:08:18, 0:10:11, 0:08:03, 0:10:26, 0:37:10, 0:34:12；evaluate: 0:27:17；audit: 0:37:09。当前full UTC2026-10-26T12:08:36至2026-10-26T16:53:28，即北京2026-10-26 20:08:36至2026-10-27 00:53:28，整体17092秒=4:44:52，不叠加并行、不把下载/本地等待/归档时间计为allocation。旧source001/002失败2:04/5:44、source003 C0/1:08:52、原full prepare16:13/technical失败10:24及metadata probe22秒单列保留。新9 full45000step，technical另18smoke step，C新训练step0。24保存execution最大Torch allocated 46.913085938MiB，是Torch分配器而非整卡驱动峰值；CPUprepare/evaluate/audit分配V100配额但CUDA隐藏，MaxRSS为Slurm采样。训练optimizer/评估含保存/导出和选中epoch、UUID见analysis_numbers_013与training_cost CSV，不编造未保存的纯forward/逐region时间。
+
+112个科学smallcatalog artifact75344535字节全部逐size/SHA核到experiments/hpc_results/本版本/verified_20261027，catalogSHAc0a7a6970ba5f37928283bc45d7d2296f953c5de02a5cf0a88cc7def296fff7e；未下载大checkpoint/raw/token/34776PNG。追加metadata/derived analysis等后local_archive_proof014列123文件75629376字节（自proof及之后roundtrip/manualproof不在该计数内），canonical listing SHA6864e3b973bf286b7f84854376980778dc8b9501457c3c33e5768b031b5d2728。独立analysis_report SHA92ec4531baa0383e9a102c5de0a98652cad686d13190ffde783f3d7f36bc0f4a，download_verification011 SHA2a4438571ba970b9fc21e7beb7efaf99d4f9fdaffab9dd24ec4e3022932fbc33，local_archive_proof014 SHA6289248cf401b766405d4489f3e0d70eec0a7fce4648581959e81d14b107d3f5；六analysis文件+downloadproof+archiveproof八文件已回新run并逐远端SHA核，analysis_upload_verification014 SHA2d6bce0a094d347f1448c7f0af319ec1578af5792619e7650d0826409ae4c85d。只做保存数字/CM/计数加减和SHA，不重GT/训练/推理/检索/重采样。原source/full所有失败、guards、冻结code和历史指标保持。
+
+最终结论：B只后过滤10%在本固定VOC development组整体mIoU最好，但chair/sofa互错代价更大；C重复过滤不支持，D近持平。固定批到此停止，不自动改主线/部署/GitHub/ZIP或追加研究。正常startup轮询未及时覆盖的已完成worker不补造存活；完整独立终态接受覆盖startup快照。完成小归档与最终结果报告后删除仅bank-filter-placement-v1监测（原PAUSED），不影响其它任务。手册同步备份真实旧remote并CAS原子追加，保留其它章节。
+
+
+## 103. B组固定三模型的投影后删除比例开发扫描（2026-10-27用户新授权）
+
+用户在102完整接受后明确要求“现在做B组的调参实验，看删多少更好”。独立experiments/plans/bank_postfilter_sweep_v1，固定后删0/5/10/15/20/25/30%，三seed42/123/2026，MLP前0%、背景10569不删。只复用B_post10三个已选择best checkpoint及37571未后过滤成员的L2投影导出，不重训练或VOC重选epoch；10%复用102已接受六份clean/HCR CM及metrics，其余六档×三seed18worker重新预测。不是重新训练7种MLP，也不把原A/C/D混为B不同删除率。
+
+只改变投影空间每前景类距FP32均值中心最远floor(N*percent/100)的删除数，原np.argsort[::-1]/保留原序，重新建立保留库中心和索引。固定原普通GMP查询、两层GELU、center.2/K25/top5/search2/margin0/mixture.2/原NMS/HCR，R3关。没有新encoder/SAM3/token/GMP/pseudo/proposal/训练/loss/激活/seed/主线或部署。按三seed mean HCR mIoU最大进行本开发网格选择，完全同分删最少；所有七档/逐seedmean/sampleSD/paired10%/clean/21类和chair↔sofa双向错误成本全部报告，不事后加gate或细扫。已看VOC development调参，有选择偏差，不是独立test或全局最优证明，不自动采用主线。
+
+来源bank_filter_placement_recover_20261026_201000 manifest05fe1452b5f9391d1ace9860140ec602b0721b79d4995a90fa34ee1fc899f1f1，binding24fd3b473c65b3f32b78d35b12a080de46269d188d19ee9ea0094f318a5ce58d，accept4aca59dec2b9e583aaf9c68e3ecc11b89654591ac488ae92e947a6e934e34377。102旧所有冻结源码/模型/指标原字节保持且旧monitor已删除，不重启该批。
+
+唯一新版本bank_postfilter_sweep_20261027_020000；ROOT=/data/home/zhengyuan/25-nd/1010，run=ROOT/experiments/bank_postfilter_sweep/版本，audit=ROOT/experiments/hpc_launch_audits/版本，code=audit/code已冻结454records=447已接受源逐SHAclone+7新文件。manifest SHA3e5a00831346c82fb1ca3882d4a98b8f49722baf7a41610a3d0cc4a67df0c0c9，bindinga89a7561516758cf4562a638402336238af28cd929ef4208438b6ccf9ba829c8，真实quota reserve 190903205888字节。source_expected_002/put_manifest_002是实际pin，001上传前草案保留；上传前scope/source labels/background trace断言review加强未触发任何科学计算或JobID。唯一prepare_remote_001已完成register/submit；登记3proof及actualjobs/launch/guard3proof/catalog均逐SHA下载，local_registration_verification_001/local_launch_verification_001仅输入/实际提交证明，不当完成质量。
+
+真实全afterok链technical3816168(6h)→predict3816169 array0-17%3(48h)→evaluate3816170(12h)→independent audit3816171(12h)，20科学child+1audit，各1V100配额6CPU24G；CPUeval/audit CUDA隐藏但仍占V100资源，不能称零GPU分配。2026-10-26T18:07:46Z（北京27日02:07:46）初始快照technical PENDING、18predict/eval/audit等待依赖，无新failure；没有真实GPU技术完成或新mIoU。已有JobID/guards绝不能重复layout/register/upload运行科学code/submit/audit或手动verify活audit。source旧audit C0 gate已实际履行，未使用已完成旧JobID作为易过期afterok根依赖。
+
+14本地NumPy核心测试0fail/error/skip已过，不代替GPU。Slurmtechnical须14无skip、三Bcheckpoint1024原缓存输入导出回放atol=rtol1e-6、10%三seed×两图×clean/HCR共12历史PNGpixel exact及全部7档共84pilot合法后整体C0，才18预测。18×2×1449=52164真实新PNG/36组全SHAcommit后才本批一次1449GT；10%旧6CM按SHA复用，合计42逻辑逐图CM，全部身份/CM/CSV/均值SD/选择算术由独立audit只读核，不读rawGT/modeltensor/token或重推理/检索/训练/重采样。新completion_acceptance_001 passed/exactbinding且audit3816171实际C0才小catalog逐SHA归档、独立analysis/资源/回传proof和最终手册补记。不下载大checkpoint/raw/token/52164PNG。
+
+专属pinned native controller77663、plan/native_controller.py/local_control.py/inspect_remote.py，先work_state.pending，未CONTROL_DONE只空读同一原请求，初始write已DONE须及时清pending，不轮询旧DONE或重发mutation；失联先actualledger/guards再重建，不把GPFS/SSH分钟等待/D当失败。私钥仅本地不打印上传，固定ED25519/BatchMode/StrictHostKeyChecking，不密码。科学异常保留全部attempt，只取消本ledger实际PENDING依赖；修科学错误新version+针对probe，不改运行454/签名/断言。用户暂停取消立即只停本批和监测，不自动恢复、不动其它实验/个人queue。新bank-postfilter-sweep-v1监测只跟进本七档，普通健康进度静默，仅必要新失败/行动/最终结果；完成后删除仅新monitor。固定7档到此停止，不自动第二轮搜索或改变主线。
+
+
+### 103.1 七档全部独立接受、开发最优及最终归档（2026-10-27）
+
+最终事实覆盖103全部初始PENDING/Resources快照：当前bank_postfilter_sweep_20261027_020000的20科学child及independent audit3816171均实际COMPLETED0:0，batch/extern同C0，无本批科学失败。technical3816168 C0/8:39，14tests无fail/error/skip、三B模型各1024源cache输入导出回放atol=rtol1e-6、10%12历史PNGpixel exact、全7档84pilot合法通过后才18worker预测。52164真实新PNG/36组全SHA commit之后才本批一次1449GT，来源10%六CM按SHA复用，保存合计42逻辑逐图CM及882逐类CSV。completion_acceptance_001 statuspassed/bindingexact，SHA429e20ec08c51f43113b4a3f8d7b741aa9818b89503fbe4f8717da6c43e8b6ce，audit3816171 C0/9:37，52735唯一文件/574367206字节实际校验；manifest SHA3e5a00831346c82fb1ca3882d4a98b8f49722baf7a41610a3d0cc4a67df0c0c9、bindinga89a7561516758cf4562a638402336238af28cd929ef4208438b6ccf9ba829c8、454冻结records未改。无新训练，源B三selected checkpoint/epoch及37571导出固定，无新SAM3/token/GMP/pseudo/proposal。
+
+| 后删% | HCR seed42/123/2026 mIoU% | HCR mean±sampleSD% | meanΔ10% pp / 正向seed | clean mean±sampleSD% |
+|---|---|---|---|---|
+|0|86.852514/86.968823/86.251439|86.690925±0.385023|-0.112221 / 0/3|85.842763±0.351973|
+|5|86.879821/86.983199/86.676811|86.846610±0.155871|+0.043464 / 1/3|85.963786±0.059378|
+|10|86.887088/86.996230/86.526122|86.803146±0.246038|+0.000000 / 0/3|85.914177±0.155192|
+|15|86.947303/86.849856/86.485250|86.760803±0.243559|-0.042343 / 1/3|85.876849±0.198847|
+|20|86.883044/86.872135/86.519568|86.758249±0.206776|-0.044897 / 0/3|85.857966±0.148006|
+|25|86.941091/86.811211/86.493846|86.748716±0.230079|-0.054430 / 1/3|85.827793±0.161871|
+|30|86.930684/86.811931/86.370414|86.704343±0.295224|-0.098803 / 1/3|85.811449±0.171059|
+
+冻结开发规则选择5%，HCR mean86.846610%，比10%仅+0.043463887pp；逐seed−0.007266389/−0.013030772/+0.150688823pp，paired sampleSD0.092904236pp，仅1/3正，均值优势由2026带来。各seed自身最佳42→15%、123→10%、2026→5%，不能称稳定通用最佳。5%和10%各自相对0%的HCR三seed均正；15%–30%均值都低于10%，不支持越删越好。clean的5%均值85.963786%也最高，但不改变预先选HCR规则。仅当前7档/固定模型/看过VOC development的调参最优，有选择偏差，不是独立test或全局最优；sampleSD非CI，没有新bootstrap/显著性gate。
+
+5%−10%的chair IoU mean+0.192271894pp（三seed均正），sofa−0.370555774pp（1/3正）；chair→sofa均值−5391.333像素，sofa→chair完全不变，双向互错共−5391.333。5%−10% BG_FP mean+12934.333、FG→BG FN+8029.000、wrong_FG-18220.333像素。不能将目标互错轻微减少称空间分离机制成立或解决椅子沙发混淆，完整7档/每seed/21类伤害及相对0%成本全部保存；像素子项不相加冒充mIoU贡献，不从CM推断owner/proposal归因。
+
+每前景类按原FP32 mean欧氏最远floor删除、保留原顺序，BG10569全程不删；0%删0留37571、5%删1340留36231、10%删2691留34880、15%删4042留33529、20%删5393留32178、25%删6742留30829、30%删8090留29481，原始37571含27002FG。百分比不是按整个含BG库直接乘；逐类floor人数/删除与保留ID已归档，三seed各比例保留集合静态核验嵌套。支持下界已保存，未保存逐query fallback次数不编造其频率。10%来源六NPZ的本地保存字节与102源CM逐SHA精确，不能把它说成六新预测组或重复读取GT。无其它模型/训练数据干预，已接受102及旧失败历史全不动。
+
+角色Slurm elapsed按数组index顺序：technical: 0:08:39；predict: 0:25:15, 0:14:38, 0:29:38, 0:29:03, 0:13:00, 0:15:12, 0:27:18, 0:23:59, 0:15:51, 0:09:16, 0:25:44, 0:23:52, 0:11:32, 0:14:16, 0:24:42, 0:23:39, 0:08:30, 0:10:03；evaluate: 0:21:13；audit: 0:09:37。科学UTC2026-10-26T18:32:15至2026-10-26T21:29:19，北京时间2026-10-27 02:32:15至2026-10-27 05:29:19，整体10624秒=2:57:04，不叠加并行；technical Submit至Start排队1497秒另列，不计allocation窗，本地查询/下载/分析/归档等待也不计。保存20角色execution最大Torch allocated 25.502929688MiB，为Torch分配器而非整卡驱动峰值；CPUevaluate/audit分配V100配额但CUDA隐藏，MaxRSS为Slurm采样，不能称零GPU资源。新正式训练step0，无forward独立benchmark，不把整个wall冒充纯推理耗时。
+
+109个科学smallcatalog artifact104692344字节全部逐size/SHA核到experiments/hpc_results/本版本/verified_20261027，catalogSHA432a2c476ebb342f891d5c340b57b63339c7fca74876e16596fd0cb20cbe0492，不下载大checkpoint/raw/token/52164PNG树。追加metadata/6analysis等后local_archive_proof009列121文件105072559字节（不含自proof和之后roundtrip/manualproof），canonical listing SHA96d0c1babf438263872e2f64e5822a2caf3e9cafe2419ba9c65d261061386d16。独立analysis_report SHA47c1ad4c03b98024be6f8c46bc9235d87e16d7346b1c1c4f6172cac3d7ce21e9、download_verification006 SHA85084b695c588538592d5c0d47ac1f1bbab3eeae2da22a6791e5611c95f0da04、local_archive_proof009 SHAe40c44d215b7f605d6445063e8d22b05eb67b9916c3c765a1ca62f8aaac299d8；六analysis文件+downloadproof+archiveproof八文件已回新run并逐远端SHA核，archive_roundtrip_verification009 SHA6a0db4982f4027b0b4e0cb3537110daea1f14a313bd297e26b7ff08e28979b09，冻结science保持。只读取保存CM/数字/IDs和SHA，不重GT/训练/检索/推理/重采样。
+
+最终结论：当前固定网格5%平均最好，但相比10%仅1/3seed正，三seed最优不同，证据支持温和5%–10%而非稳定单点最优。保留类代价与development偏差；本固定批到此停止，不自动细扫2.5/7.5或增加seed/其它研究、不改主线或部署。已完成worker不补造startup存活，完整独立接受覆盖初始排队快照。最终完整归档与结果通知后删除仅bank-postfilter-sweep-v1监测，不恢复102或干扰其它任务。手册同步先备份真实旧remote并CAS原子追加，冲突先merge保留其它章节。
+
+
+## 104. MLP后过滤5% + single-view Loose E 三seed固定组合（2026-10-27用户新授权）
+
+用户明确要求“那在MLP删除5%的基础上加E来跑一遍，看能不能冲击记录”。独立计划experiments/plans/r3_postfilter5_e_v1，版本r3_postfilter5_e_20261027_154000，run=/data/home/zhengyuan/25-nd/1010/experiments/r3_postfilter5_e/r3_postfilter5_e_20261027_154000，audit=/data/home/zhengyuan/25-nd/1010/experiments/hpc_launch_audits/r3_postfilter5_e_20261027_154000，冻结code=audit/code465records=103已接受454逐SHAclone+7新组合/测试/计划文件+4原E已接受legacy字节。manifestSHA713369531e312a6152331ea6bdfc7e918265ed1b20dcc5b1fcf260ee88bbd884，binding61ff7e4285764df0bd19d3be54706ea9f51bebb7f6c447170dac75b92b4f0d39。source_expected_002为实际登记pin，001/prepare_remote001/首次登记前异常全部保留。
+
+原B三个selected checkpoint/epoch与37571未后删导出保持；MLP前0%，后每FG类按原FP32中心欧氏最远floor(N*.05)删，BG10569全留，库36231。复用103已接受p05 HCR三组PNG/CM；不重训、不VOC重选epoch、不搜索比例。R3原固定80%中心裁剪候选/映射mask/原图1280D hardcenter GMP按旧accepted SHA复用，在新模型/同seed5%库重新投影检索，不能复用旧R3模型的类分数或接受集合。新SAM3/token/GMP/proposal/训练均0；部署仍需中心裁剪编码，不能把本cache组合成本冒充部署成本。
+
+E完全保持旧规则：先q>=.4/r>=.95/m>=.1/novel>=.1严格R3，再q>=.4/r>=.90/m>=.05/novel>=.1单视角loose追加；均只补实时背景，FP32(.8r+.2q)排序/ID平局，保存FP32转Pythonfloat比较无epsilon，不用crop语义分数/类别专用规则。主结果固定完整E，strict仅实现所需中间阶段，不择优换primary。三seed42/123/2026×两阶段×1449=8694新PNG，另3基线复用，共9逻辑CM。8694预测/owner/trace/21classscore全SHA提交后才本批一次1449GT。保存21IoU/FPFNwrongFG/chair↔sofa，三seed逐值/mean/sampleSD/配对方向；已看VOC development及5%先前调参边界保留，不是独立test，不自动推广主线。
+
+首upload13文件逐SHA成功，登记前发现根目录configs/recipes/r3_record_v1.json不存在，在register.guard/code/run/manifest/JobID产生前中止；不是科学质量失败。新outer002仅将本地已发布recipe SHA6089f777caec8d4d364ae04b1df88fac367833de07014f127f99044e2398f07b作为只读凭据放audit/record_references，科学11patch字节完全不变，保留001异常，未修改集群根configs或任何历史源码。
+
+唯一已实际提交链technical3819711(6h)→predict3819712 array0-2%3(48h)→evaluate3819713(12h)→independent audit3819714(12h)，全afterok，5科学child+1独立audit，各1V100配额6CPU24G。CPUevaluate/audit CUDA隐藏但仍占V100资源；真实quota reserve190618402816bytes。登记/实际launch六小proof本地核binding/465字节/资源/边，只是输入和提交证明，不当技术完成/最终mIoU；已有JobID/guards禁止重复登记/上传科学code/提交/手动verify活audit。
+
+本地47tests无fail/error/skip，仍须Slurm技术47无skip、3模型1024真实导出回放1e-6、6p05像素精确、6旧strict/E像素及旧类分数回归、6新组合合法后technicalC0才正式3worker。三worker真实>=25图或C0+execution后只读outerstartup存证，已完成worker不造存活。最终须completion_acceptance_001 passed/exactbinding且audit C0再小catalog逐SHA下载、独立analysis/成本/归档回传、手册最终补记；不能拿summary/launchproof代替独立接受。独立audit只字节/保存owner与gate/CM/CSV算术，无GT/modeltensor/检索/推理/GMP/bootstrap。
+
+报告固定比较新E对p05、strict、旧E及已发布严格R3；旧系列SMC-H均值86.945033%与RGR-G seed42 87.196738%分开作历史参考，不能单seed与mean混用或把两边历史提升相加。正平负均在本固定批停止，不追加阈值/seed/arm/新loss或训练，不部署/GitHub/ZIP，不动其它实验/个人queue。异常留attempt，仅停本ledger未启动依赖；用户暂停取消立即只安全停本批及监测不自动恢复。正常健康推进静默，仅必要失败/行动/最终独立归档报告；结束删除本新monitor。
+
+
+## 105. 小掩码门槛与HCR救援空档固定三seed对照（2026-10-27用户授权）
+
+用户针对配置/顺序审查，明确要求先做“小掩码＋HCR空档”实验。独立计划experiments/plans/small_mask_hcr_v1，唯一版本small_mask_hcr_20261027_200000，run=/data/home/zhengyuan/25-nd/1010/experiments/small_mask_hcr/small_mask_hcr_20261027_200000，audit=/data/home/zhengyuan/25-nd/1010/experiments/hpc_launch_audits/small_mask_hcr_20261027_200000。冻结472records=source104已接受465原字节clone+7新科学/测试/计划文件；manifest SHA7311538b46f35c40ff79641f57e0eae8f8db4a29c0f91d3302049b92127ddff3，bindingdeac45aa31d178600e55c58c54d56db1fc288f7199fea11bb61ec52363a50200。source_expected_002/prepare_remote_002为最终pin，001是未登记前草案；002仅加强独立审核的实际source mask字节/hash/owner几何检查，无科学参数改变，所有草案保留。
+
+source104独立accept e21467f677a3b619b13381be353e1fc22c49421fda39d48e9e98518a06221177已passed/exactbinding，audit3819714及batch/extern实际C0/51:38，小accept/catalog已本地逐SHA核。source模型/库/权重/候选/指标原字节保持。本批沿用同seed B selected checkpoint、MLP前0/后删5%每FG类floor/背景10569不删的36231单库、native1280D query与原R3中心crop几何/已保存同库score，不重训练/选epoch或生成SAM3/token/GMP/pseudo/proposal。
+
+固定42/123/2026及三组：A_current完整原classified面积300→HCR→strictR3→LooseE；B_gap_hcr在完整原HCR后，仅将原clean且fullmask100–299像素候选按原q>=.4/r>=.95/m>=.1/liveBG>=.1门槛顺序补背景，保护原HCR全部前景，然后原strict/E；C_area100只将classified NMS面积降100，HCR和strict/E其余不变。B不是恢复所有NMS拒绝候选；C可能改变原clean归属，不声称仅补原A背景。固定主比较B−A的最终E，C是直接放宽对照，全部报告不择优改primary。
+
+实际唯一全afterok链technical3822329(6h)→predict3822330array0-2%3(48h)→evaluate3822331(12h)→independent audit3822332(12h)，5科学child+1audit，各1V100配额6CPU24G；CPUevaluate/audit CUDA隐藏但仍占GPU配额。quota实际reserve190589665280bytes。登记3proof及actualjobs/launch/guard3proof本地核SHA/binding/465clone+7patch/资源/边，仅launch输入与实际提交凭据，不能称技术完成或mIoU。
+
+本地21NumPy目标测试无fail/error/skip，包括抽取原生产函数体的A/C合成像素回归；不代替真实GPU。technical须21无skip、三模型1024导出回放1e-6、每seed两图A HCR/E像素exact/C原生产minarea100像素exact/B保护通过且C0，才既有三worker。每seed同次query投影/检索供A/B/C；A1449×3全HCR/E逐像素与source一致才有效。B/C各HCR/E共17388新PNG/12组，另6组A按SHA复用，合计18逐图CM；所有新预测/owner/trace全SHA提交后才一次1449GT，并再次核A每图CM精确。保存21IoU/BGFP/FN/wrongFG/chair↔sofa、三seedmean/sampleSD/配对方向、小掩码分母/eligible/accepted/新增像素和R3/E owner变化。
+
+已有JobID/guard禁止重登记/重提/改冻结code或手动verify活audit。独立audit只字节/候选门槛/owner与保存CM/CSV算术，不读GT/modeltensor/token、不重检索/推理/GMP/训练/bootstrap；audit_progress_001保存真实文件/字节进展。completion_acceptance_001 passed/exactbinding且auditC0后才smallcatalog逐SHA小归档、独立analysis/资源/回传proof与最终结果。当前是已提交，尚无本批真实精度完成。
+
+科学失败保留全部attempt，只安全取消本ledger实际PENDING；修复须新version+针对probe，不放宽断言。用户暂停取消立即只停本批和监测、不自动恢复、不动source104/其它batch/个人queue。VOC已看development且source5%经其调参选择，不是独立test。固定三组升平降都结束，不加面积/阈值/seed/arm/loss/结构搜索，不自动主线/部署/GitHub/ZIP；最终模型入口统一作为另一步集成验收，不与本精度对照混合。后续手册更新备份实际旧remote+CAS，冲突merge保留104其它新增。
+
+
+## 106. 同训练轨迹KNN-5与production balanced选epoch三seed对照（2026-10-28用户授权）
+
+用户针对旧继承配置审查明确“按照你的想法做实验吧”，固定开展两个独立任务。此项计划experiments/plans/checkpoint_selection_v1，版本checkpoint_selection_20261028_010000，run=ROOT/experiments/checkpoint_selection/版本，audit=ROOT/experiments/hpc_launch_audits/版本，ROOT=/data/home/zhengyuan/25-nd/1010。冻结472records=104已接受465逐SHAclone+7新文件，manifest SHA49133cc324c2f8de4e11f6fe09a61cd58c3d72efa9b07f51ada81411f6b30fe8，binding60389686bd9bd872cb12a5fcf66b0c06ec0a6111d0550d9c312481bfc5559a7f。登记3与实际launch3小凭据已下载逐SHA/clone/资源/afterok独立核；只是输入和实际提交，不是技术完成或新mIoU。
+
+固定当前B三seed42/123/2026、37571未前删成员（10569BG）、30095fit/7476hold、原图划分与50个epoch/checkpoint。不是旧E0的34880/6941。B balanced选43/40/35，本批从同150checkpoint按历史KNN5内部macro firststrictmax选epoch；production balanced仍K25/top5/search2/center.2内部macro firststrictmax，均在后过滤前选模。稳定gallery行序解决近邻同分，投票按count、similaritysum、低数字类；argpartition仅定位阈值，边界ties完全恢复原stable顺序。本地12项无skip过，真实GPU technical还须源150checkpointSHA、三1024导出回放、选中epoch与best投影exact、真实全30095fit/256query原KNN指标exact、六图HCR/E像素回放，不把本地测试当GPU接受。
+
+不重训；KNN所选模型重新投影37571并按原FP32类中心距离删各FG floor5%、BG不删、库36231。native与原80%center crop的既有1280D descriptor须用新epoch模型/匹配库重投影检索，不复用另一模型的类分数。面积300/NMS.4/HCR/strictR3/LooseE全不变，不混入105小掩码或额外NMS组。三seed×HCR/E共8694新PNG/6组全SHA提交后一次1449GT；balanced6组CM/PNG按签名复用，总12CM。主比较knn5-balanced完整E，HCR辅助；三seed逐值/mean/sampleSD/配对方向、21IoU/FPFNwrongFG/chair↔sofa双向，VOC为已看development和先前5%调参边界，不按VOC重选epoch/阈值或bootstrap/主线推广。
+
+实际唯一链technical3823425(6h)→select3823426array0-2%3(24h)→predict3823427array0-2%3(48h)→evaluate3823428(12h)→independent audit3823429(12h)，8科学child+1audit，全afterok，各1V100配额6CPU24G；CPUevaluate/audit隐藏CUDA仍占GPU配额。已有JobID/guards禁止重register/upload科学code/submit/audit或手动verify活audit。首次2026-10-27T16:22:27Z真实快照technicalPENDING Resources，其余Dependency，不能声称已实际GPU测试/新精度。
+
+仅completion_acceptance_001 passed/exactbinding且auditC0后smallcatalog逐SHA小下载/独立analysis/资源/回传归档。审核只保存字节/IDs/50epoch指标/首最大值/owner门槛/CM与CSV算术，不GT/modeltensor解码/推理/检索/GMP/训练。失败保留attempt，仅取消本ledger实际PENDING；科学修复新version+真实小probe，不能改运行snapshot/assert。用户随后明确“不要设置自动化任务，跑完我告诉你”：本两项没有创建、也不得创建自动化/监测；Slurm依赖自主跑完，等用户回来再手动验收收尾。专属pinned native local_control.py按state.pending串行，nativeexit0即DONE；不动其它batch/个人queue。手册同步backup真实旧remote+CAS，冲突merge保留其它章节。
+
+## 107. 训练伪标签跨类别先到先得重叠来源诊断（2026-10-28用户授权）
+
+独立计划experiments/plans/pseudo_overlap_diagnostic_v1，版本pseudo_overlap_diagnostic_20261028_013000，run=ROOT/experiments/pseudo_overlap_diagnostic/版本，audit同规则。冻结470records=104来源465原字节+5新文件，manifest SHA63b313155910e010e14417cdb88e72ea5f7df234aa2d86a43e8337d66762bf64，bindingbd0ec73e2fd853750e603104d54d5526277d3a0b58504e6a8261214471e2ffe3。旧生成阶段complete SHA f7cd5d13980e3d10ecc9f5fcf73ea5456e5872d6848dd05d0dae904a7e78439a锚定10582逐图prompt-choice报告及raw语义PNG；保持原per-class-union概率.4/close3/原迭代/膨胀1后按原mapped_labels顺序合成。原raw/instances不存在、save_instances未启用，报告不含完整实例score或mask，不能从最终PNG伪造被覆盖竞争类与confidence。
+
+诊断只读这些真实历史报告与raw伪标签，不读GT、不生成SAM3/token/GMP/标签/新库、不训练。对每类blocked=after_repair_union-composite_assigned，decode原PNG核各类assigned计数。合计是class-pixel membership excess，不能冒充distinct重叠像素；k个正面积类别时报告ceil(excess/(k-1))至min(excess,union)边界。仅两正面积类才能精确归因later被earlier覆盖方向，>=3不给伪造pair矩阵。完整报告类/顺序负担与chair/sofa共现范围。历史raw在几何清理前，且不等于后来35canonical-source修复图，不能把本计数说成当前B训练库的精确污染量或mIoU损失。缺真实score/mask意味着本批没有confidence-wins质量对照；改compose_instances(score)同时改变per-instance修复，是混杂因素，不能直接开关冒充单因素。
+
+实际唯一diagnose3823435→independent audit3823436，afterok，各6CPU24G12h/1V100配额、CUDA隐藏，GPUcompute0但非零资源分配。本地7项算术测试无skip通过，科学diagnose须重跑7无skip并核10582报告/PNG字节/类直方图。独立audit实际重读来源字节/JSON/保存CSV算术，不模型/GT/重raster。仅acceptpassed/exactbinding与auditC0后smallcatalog小下载、独立分析/资源/归档，正平负均停止，不自动重建标签/训练/VOC或其它研究。
+
+登记与actuallaunch六小proof已本地独立SHA/470clone/资源/依赖核，不能当最终诊断结果。专属controller与106分开、只本ledger，失败留历史，只安全处理自己实际PENDING依赖。用户明确不设自动化，未创建；等用户告知跑完再手动验收和解释证据。两批不改主线/部署/GitHub/ZIP、不消费其它监测连接。后续新增最终结果也须备份真实remote手册并CAS，保留98–106及其它更新。
+
+
+### 106.1 独立接受、最终结果与小归档（2026-10-28）
+
+所有8科学child及audit3823429实际COMPLETED0:0，batch/extern也C0；accept SHA9b5029b43fdef6ab931ff6cd2d51333aaf67b57f3de29ac3db63e8d2ea96cf1e、manifest49133cc324c2f8de4e11f6fe09a61cd58c3d72efa9b07f51ada81411f6b30fe8/binding60389686bd9bd872cb12a5fcf66b0c06ec0a6111d0550d9c312481bfc5559a7f精确。balanced选43/40/35；KNN选40/40/35，没有新训练。E balanced均值87.095121701±sampleSD.077292526%，KNN87.071293118±.041538921%；KNN-balanced逐seed−.071485749/0/0pp，mean−.023828583pp。HCR mean差−.000796129pp，保留balanced，不把低SD称为更优。全21类/双向椅子沙发/错误成本保存在metrics/per_class及独立analysis；开发集边界，不追加研究/部署/主线改变。194小catalog文件29282598字节逐SHA下载，12CM与metrics矩阵核对；catalogSHA701e3cbb321f0a2e801d54a2a487a5b018a2d894ec0010e92bcdec18b1cd2381。整体科学allocation窗2026-10-27T16:31:51至2026-10-27T18:44:04 TZ=UTC，7933秒，不叠加并行，各角色耗时和实际Torchallocated范围[13.1435546875, 32.5087890625]MiB在cost_summary_014；非整卡峰值，CPU仍占V100配额。完整analysis/downloadproof/localarchiveproof回远端逐SHA。按用户要求无自动化；固定批至此结束。
+
+analysisSHA9af442691c606bbe5f053edebff1b6640208ab778056657d121fbd0249106e72，localarchiveproofSHAcc3df8c36f9f835b9dfec0bf11e0fa03e938995005eb1e06c957c7d546b03dcf，listingSHA1ebc6d158d7b0e2eb887cde06f04f0b4bd462c794dba40df6180a1534813dcbc。
+
+
+### 107.1 独立接受、重叠诊断结果与小归档（2026-10-28）
+
+diagnose3823435和audit3823436及全部batch/extern均COMPLETED0:0；acceptSHA9014b82fda1647dbff17c9274580f722342cc85ebce56f297c801acd7582d597，manifest63b313155910e010e14417cdb88e72ea5f7df234aa2d86a43e8337d66762bf64/bindingbd0ec73e2fd853750e603104d54d5526277d3a0b58504e6a8261214471e2ffe3精确。10582图中3155（29.814780%）有跨类重叠；累计blocked4679689是class-pixel membership excess，占precomposite类面积和.783832%，非独立像素数；独立重叠像素范围3637242–4679689。sofa候选面积被挡6.203602%/1471078，chair.174619%/47823；可精确归因的双正面积类chair/sofa冲突30图、394004像素归chair。不能断言真实应归sofa、不能由本数据证明confidence更好，也不能从>=3类scalar报告捏造pair分配。raw在几何清理前、35canonical修复边界保留；无GT/新标签/模型/训练。10小catalog文件13413006字节逐SHA核，catalogSHAe0f52c7a500c594528417f30b6daae509133f810e8e99084f5b027785b52bcf9。整体TZ=UTC allocation窗2026-10-27T16:58:10至2026-10-27T18:16:29，4699秒，各角色见cost_summary_014，不叠加并行；CPUcompute但占V100配额，GPU峰值未测。分析及download/localarchiveproof回传核SHA，固定诊断停止，无自动化/自动重标注或新训练。
+
+analysisSHA7883f6dff8062913c6af92b81851fb73e0791333a0276bf37c9349f8f5eb051b，localarchiveproofSHAd75a15ef718e8caa53cfc083f43c32104a7fb16204e7a84f31c6dc2afe313a00，listingSHA148f0299bbdb94a0ad229be4de4cc702e1159bbd46e7b6c4fc6f1ab36b28b01f。
+
+连接记录：2026-10-28联通SSH1014已恢复，exec与交互式shell均可用，实际sacct及验收/归档已读取。客服说明SFTP应使用1018；原1014的SFTP超时不再当异常证据。1018的ED25519指纹为SHA256:/5kA6tA42PbLNUgg5CQXOdb5zF8H7eZe6AR5FeAnwUw，和既有1014不同，未自动信任；本次通过原指纹校验的SSH1014完成传输，不断言此前服务异常根因。
+
+
+## 108. balanced最终候选之前的训练伪标签重叠归属固定对照（2026-10-28用户授权）
+
+用户明确准备以balanced作为最终模型，要求先实测训练伪标签跨类重叠问题。本批计划experiments/plans/pseudo_overlap_owner_v1，唯一版本pseudo_overlap_owner_20261028_150000，ROOT=/data/home/zhengyuan/25-nd/1010，run=ROOT/experiments/pseudo_overlap_owner/版本，audit=ROOT/experiments/hpc_launch_audits/版本。A_order原类别顺序先到先得；B_score仅重叠处按原实例FP32 SAM分数竞争，同分保持原顺序。两组共享一次恢复的原实例mask/score，先每类union，再完全相同的概率.4/close3/原迭代/膨胀1与diningtable原close2。分数用相同灰度max/min几何扩展到修复边缘，必须support与原binary修复逐像素一致；不是旧compose_instances(score)同时改成实例修复的混杂对照。FG union与非重叠标签不变，后续同一语义清理可能因归属不同产生不同区域/背景数，不虚称新成员数固定或背景特征必然相同。
+
+原始实例/score未保存，故授权在10582训练图按原冻结SAM3/Active/presence1/FP32配置恢复；不生成新token缓存，GMP只读签名原72x72x1280 FP32 token。A必须在同一次恢复输出上与原生成器pixel exact；历史raw差异完整记录，不强称与旧35canonical fallback字节等价。A/B都重新生成匹配raw/clean标签、普通HardCenterGMP rho.1和两层1280-512-256 GELU MLP，各42/123/2026，共6新训练/30000step，原8466fit/2116hold图、CE+.5SupCon/50x100等配方不变。统一production balancedK25/top5/search2/center.2 macro firststrictmax选epoch；前不删/后各FG floor5%/BG不删。不得新阈值/比例/arm/seed/结构/loss或VOC反馈。原accepted balanced作为历史参考，不只把新B与旧A比较；不同内部伪标签/样本量的Top1只作各自选模诊断，不是跨组真实质量。
+
+真实源小probe3828508已唯一提交并实际RUNNING，12本地/集群目标tests无fail/error/skip；最近2026-10-28T08:33:17Z为RUNNING19:12/c2v100m2-2，仍在SAM3源恢复，尚无12图完整接受报告或新mIoU。固定单次Slurm dispatcher3828759已实际提交、afterok3828508、PENDING。它先独立重读12保存mask/FP32score/geometry及probe C0，再唯一注册480code=accepted106的472逐SHAclone+8新文件，然后唯一提交generate0-3%4→prepare→technical→train0-5%3→predict0-5%3→evaluate→独立audit，19full科学child+1audit，全afterok；generate依赖dispatcher C0。当前full尚未确认注册/科学JobID/6训练开始，不预填manifest/binding或结果。probe与dispatcher实际receipt已下载逐SHA/资源/依赖核，均不是completion。source probe1V100/6CPU24G2h，dispatcher CPUcompute但仍1V100配额/6CPU24G12h且CUDA隐藏。健康队列按依赖自主执行，不创建自动化/监测，按用户要求等其手动回来再查。
+
+已上传的outer001在提交前发现继承source new_encoder_GMP=0旧元数据，未执行；另存register_full_002/full_expected_002/submit_dispatcher_002仅纠正训练源恢复/GMP元数据，8科学patch字节不变，001保留。expected002 SHA7eadd3fb3a17689a35040494e73a1e03f23eae55ad59e2d64ed32052d96892e6，实际dispatcher receipt SHA9b64dcb083a0edcdd0a11d8ea3afcfcc86e3ad7cf6eb0bb2af2a62053f1902d9；已有guard/intent/JobID禁止重复提交/登记/上传科学code或手动verify活audit。
+
+完整6模型原native/crop rawquery与proposal固定，面积300/NMS.4/HCR/strictR3/LooseE不变，不新生成VOC SAM3/token/GMP/proposal。17388新PNG/12组全SHA commit后一次1449GT；另复制6历史balanced逐图CM共18CM。主比较B-A完整E、HCR辅助；逐seed/mean/sampleSD/方向/21IoU/BGFP/FN/wrongFG/chair↔sofa双向及两类IoU、重叠归属人数/像素/历史漂移/成本/Torchallocated峰值都报告。meanE差>0且>=2/3正才记方向支持，不自动采用；B只胜freshA却不胜当前参考时不能叫最终模型提升。VOC已看development，无独立test/新bootstrap/CI宣称。
+
+只有completion_acceptance_001 passed/exactbinding且最终audit C0才小catalog逐SHA下载/独立analysis/资源/归档回传和手册最终补记。审计只实际字节、保存mask/score归属、IDs、CM/CSV算术，不重SAM3/训练/检索/GMP/GT。科学失败先具体日志留全部attempt，仅停自有未启动依赖，新科学修复需新版本/针对小probe；不改运行snapshot/断言。无自动主线推广/部署/GitHub/ZIP，不动其它批/个人queue。后续手册backup实际旧remote+CAS，冲突merge保留其它章节。
+
+
+### 108.1 原准备超时、输入等价检查与独立恢复（2026-10-29）
+
+旧full实际manifestSHA22cac5476d13e4836ba9ec190786b0ac28c2959b5450913f791d5099bd5c94a4/bindingd96d7175b8346d078853ef9c01a15eae9870818c8db74c77900ae71204b7e96b。generate3828811四child均COMPLETED0:0，10582图全部恢复，历史raw changed images均0。prepare3828812在06:00:04 TIMEOUT（batch CANCELLED0:15/externC0）；两组prepared.npz及prepared_report已写出，training_owner_counts.csv为0字节，prepare_complete不存在，不能视为准备通过。六训练未启动；15自有PENDING下游已精确取消且Elapsed0，旧代码/manifest/结果/残留锁/空CSV全部保留不覆盖。超时logSHAae99839a2b5a90ca68c96485bbde62d3367a76c468ea3ce112d358ecb7c6c402，清理proofSHA7b91f3d388d3b0a667d196af2d3a53c22e5e7730880bf237646def60ece7afc4。
+
+旧prepare反复校验84656个生成产物（约626MB）、重复打开10582个receipt多遍。恢复仅改I/O：8线程初次逐SHA读真实字节，进程内缓存依dev/ino/size/mtime_ns/ctime_ns逐次保护，JSON复用解析；进程间不信任缓存，不跳过首遍字节。增加实际文件/字节/耗时进度。Slurm靶向probe3834378根/batch/extern C0/1:13，16真实图两arm的96数组字段exact，receipt完全相同，文件变更/错误SHA正确拒绝；首次9.0847s/三遍重复.00156s只属此probe，不外推全批速度。无GT/model/token/GMP/训练。新prepare必须再次完整重建并逐字段exact核旧两prepared数组后才afterok，不把旧未完成prepare冒充接受。
+
+唯一恢复版本pseudo_overlap_owner_recover_20261029_100000：manifestSHA351413174697440c7a4e3c0a92aa7069d2d7d969090dc06da2b9bdf564842fd5，binding5dfb90fd7e154dea72828a1d01777f004b6bcc3ab47a709738e569acb7dc26d0，481code=477原字节不变+runtime I/O与来源适配/audit来源适配/protocol版本及记录数/helper共4文件。原两arm/三seed/六完整训练/全部超参/选模/后5%/HCR-R3-E/17388PNG及GT后置断言不变。technical/train_one/own_gallery/predict/evaluate/summary/data AST与旧版相同。四旧generation completion与原binding逐SHA锚定复用；不再SAM3/GMP提取，不重写旧生成收据或伪造新generation成功。
+
+唯一actual恢复链：prepare3834436→technical3834437→train3834438 array0-5%3→predict3834439 array0-5%3→evaluate3834440→独立audit3834441，新live边全afterok。prepare/audit24h，technical6h，train/predict48h，eval12h；各1V100配额/6CPU24G，CPU角色CUDA隐藏。首prepare不引用过期afterok，提交前已精确核旧4源child C0/probe C0/旧失败链无活allocation。恢复登记与launch小凭据已本地逐SHA核，仍非完成/精度/独立接受。源恢复与旧超时、probe和新链成本分列，不能累加并行墙钟。
+
+继续只查新ledger/progress/log/failure/complete；已有JobID/guards不重提交/登记/上传科学代码，不手动verify活audit。最终仍以新completion_acceptance_001 passed/bindingexact及auditC0为准；届时小SHAcatalog/18CM/独立analysis/归档，不读新GT或训练调参。用户要求无自动化，未创建，按手动回来检查。当前没有新mIoU/主线采用。
+
+
+## 109. LSA＋HC-GMP＋PRR正式主线与GitHub发布（2026-10-29）
+
+用户明确选择已推荐的balanced/面积100/MLP后删5%完整配置作为主线，并明确要求上传GitHub及文档，沿用新模块名。本授权覆盖历史实验的“不自动采用/不发布”限制，但不授权改写已冻结实验、重训旧任务、调参或上传数据权重。目标仓库https://github.com/nanding0414-spec/1010的main，原Git历史保留，不强推；工作区无.git，在artifacts/mainline_release_20261029/repo独立clone审查发布。
+
+命名：LSA=Lightweight Semantic Adaptation（轻量语义适配，冻结SAM3与两层MLP）；HC-GMP=Hard-Center Generalized Max Pooling（硬中心广义最大池化）；PRR=Progressive Retrieval Recovery（渐进式检索补全）。实际计算顺序始终是SAM3掩码/token→HC-GMP→LSA的MLP→单库检索，不能为模块命名把MLP移到池化前。特征库是共享存储，不额外包装为创新；这三组模块名不等于三个独立创新已获证明。模型有轻量MLP训练，不称完全training-free。
+
+### 109.1 冻结配方与实测边界
+
+正式配方configs/recipes/lsa_hcgmp_prr_v1.json。原训练图像级类别presence1、概率.4 per-class-union边缘修复、原类别顺序先到先得重叠合成及几何清理均保留；不采用按SAM分数重新分配重叠。冻结SAM3，原1008/FP32/单相位硬中心GMP rho.1、两层1280→512→256 GELU、输入输出L2、CE+.5SupCon/原AdamW/cosine50×100/按图留出。内部选epoch改为生产balanced K25/top5/search2/center.2宏准确率first strict max；临时训练分类器不用于推理。
+
+MLP前删除0%；全成员训练及导出后，只对各FG类在FP32投影空间按类均值Euclidean距离降序删floor(N*.05)，原numpy argsort降序同分语义、保留成员原顺序，BG不删。另存新库，不原地改历史。新库明确记录词典序类别（含背景）及类内保留原成员行序；推理按这个顺序装载，防止旧foreground+background布局改变近邻同分行为。训练区域提取最小面积仍300；**分类后推理面积为100**，不复用同一面积配置去改变训练数据。推理单库、balancedK25/top5/search2/center.2、mixture.2、margin0、NMS.4/instance.02固定。
+
+PRR=原HCR→Strict R3→Loose E。中心80%裁剪生成映射回原图的候选几何，所有候选语义用原图HC-GMP＋同一LSA/同一库，不用crop token冒充原图。Strict q.4/r.95/m.1，Loose q.4/r.9/m.05，live背景比例.1，每步只填背景；Loose E复用相同mapped候选及原图分数，不新增第三个视图。PRR新增一次冻结SAM3裁剪前向；实现中的特征编码器与候选生成器使用同源冻结权重，不声称零额外算力或一定共享同一模型对象。
+
+选定结果来自small_mask_hcr_20261027_200000/C_area100：42/123/2026=87.18510366582714/87.08809049448544/87.03237153523482%，mean87.10185523184913%、sampleSD.07729085925797713pp。manifest7311538b46f35c40ff79641f57e0eae8f8db4a29c0f91d3302049b92127ddff3，bindingdeac45aa31d178600e55c58c54d56db1fc288f7199fea11bb61ec52363a50200；2026-10-29真实核audit3822332根/batch/extern均C0/2:03:48，completion_acceptance_001 passed且bindingexact。相对面积300 Emean87.09512170103622%仅+.006733530812913576pp，三seed均微正，不包装成主要创新或统计显著。5%曾用VOC调参，VOC为已看development，不是独立test。
+
+本次是代码与文档集成，不新增训练/全量预测/VOC评测；新入口尚不能冒称已完整复跑上述精度。新标签、新库、不同环境或排序应记录新版本实际结果。当前重叠对照的评测已完成但audit3834441此前尚RUNNING，其preliminary B均值86.855076%不作为新的独立接受；已接受balanced历史参照不受其审核等待影响。
+
+### 109.2 正式运行入口
+
+README中的安装与命令与本节同步。tools/run_mainline_full.py --version NEW --seed 42 --gpus 0 1为从头完整入口；--preflight-only仅预检，--probe-only只做原GPU/短训练/HCR诊断，不冒充全量PRR验收。raw merge不删除成员，train先导出完整LSA库，postfilter独立阶段输出新post05库，eval默认--rescue --prr。标准资源data/VOC2012、weights/sam3/sam3.pt、训练image-level JSON和分割列表须完整；不自动下载权重或上传数据。
+
+已有native LSA库：tools/postfilter_lsa_bank.py --source-bank UNFILTERED --output-bank NEW_POST05，再tools/run_mainline.py --bank NEW_POST05 --adapter ADAPTER --checkpoint SAM3 --dataset-root VOC --clean-proposals-dir CLEAN --raw-proposals-dir RAW --output-dir NEW_RUN --gpu 1 --seed 42；实际CLI写法见README（参数与值分开）。正式推理默认PRR并核postfilter成员/adapter/SAM3 SHA绑定、原HC-GMP签名和模型尺寸、GPU占用；--no-prr显式HCR-only、--no-hcr显式clean-only，不把消融当主线。低层run_inference.py仍需显式--prr和area100等环境契约；直接低层默认保留旧实验兼容，不等于正式入口。
+
+历史独立checkpoint不是native adapter格式：tools/export_lsa_mainline.py --source-manifest ACCEPTED_SMALLMASK_MANIFEST --source-acceptance ACCEPT --seed 42 --output-dir NEW_EXPORT。只接受真实已签名C_area100来源链，核模型/投影导出SHA/epoch、1024原输入投影1e-6回放；参数原样另存native adapter，完整投影向量按类另存后删5%库。无重训/阈值选择/GT/新SAM3，旧模型库不覆盖。转换后的adapter.pt与bank交正式推理入口。
+
+### 109.3 发布与验证原则
+
+新src/semantic_bank_filter.py提供非破坏后过滤与成员校验；src/progressive_retrieval_recovery.py提供PRR接口，复用原已验收strict/loose纯算子，不重写门槛/排序；src/feature_adapter.py等旧标识作为兼容内部实现，不批量重命名破坏checkpoint或signature。新recipe ID为lsa_hcgmp_prr_v1。旧r3_record_v1及第84节保留历史，不能再称当前默认主线。
+
+本机无torch，NumPy/接口测试不冒充CUDA/真实精度；需PyTorch的回归在隔离集群CPU环境执行，CUDA隐藏但占1V100配额。若执行已验收模型转换/小保存mask-score回放，只是集成一致性，不重训、不GT、不产生新mIoU结论。发布仅白名单源码、必要测试/词表/许可证、固定配方、README/AGENTS/完整手册，不上传数据、权重、token、库、proposal、日志、运行目录、SSH key或凭据；不打ZIP，不创建自动化，不部署覆盖正在运行实验。
+
+### 109.4 发布集成检查与保留的失败记录
+
+发布目录独立执行本地82项NumPy/接口测试全过；集群CPU89项全过、无skip，unit_tests.json SHA4d53c245e6fc67080881f2c6ee042b1756ffa94473d3b7a0316a90fc866fdca3。首轮3838035因独立发布目录漏带测试依赖而主动取消（17:36），不当成功；第二轮3838150的89测试全部成功，但后续外层脚本误把已有acceptance_001写成不存在的_002而FAILED1:0/12:28，未开始模型转换。两个attempt代码、日志和真实Slurm状态保留，不改科学源和断言。
+
+修正仅发布检查外层，独立新Job3838928已COMPLETED0:0；三个已验收checkpoint原参数转换native格式，各1024行投影atol/rtol1e-6通过，三个post5库的36231保留ID与来源逐值相等；六份保存mask/score的PRR回放与已保存C_area100 PNG像素精确。无GT读取、重训、新SAM3/GMP或全量新精度评测。详细资源、各seed最大误差和receipt SHA见docs/lsa_hcgmp_prr_validation_20261029.json。CPU检查仍分配1V100配额而CUDA隐藏，不能称零GPU资源。
+
+GitHub main发布使用旧HEAD634730200007670430d59976cb820bd161632e4d为parent，普通快进更新，不强推；release_manifest.json绑定正式文件逐SHA，旧R3发布状态可沿旧commit复现。源码和完整手册上传，数据/权重/库/缓存/运行目录不上传。GitHub最终commit和远端逐字节核验凭据保存在本地artifacts/mainline_release_20261029；本节不能包含自身commit/hash以免形成循环。

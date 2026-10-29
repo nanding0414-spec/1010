@@ -236,7 +236,8 @@ def predict_instances(img_rgb: np.ndarray,
                       feature_image_rgb=None,
                       rescue_flags=None,
                       rescue_config=None,
-                      rescue_stats=None) -> List[Dict[str, Any]]:
+                      rescue_stats=None,
+                      capture_clean_sources=False) -> List[Dict[str, Any]]:
     """Full inference: proposals -> feature extraction -> retrieval -> per-class NMS.
 
     If precomputed_masks is provided (list of bool masks), the SAM3 proposal
@@ -351,7 +352,7 @@ def predict_instances(img_rgb: np.ndarray,
     for m, proposal_score, prediction, is_rescue in zip(
         valid_masks_original, valid_proposal_scores, retrieval_predictions, valid_rescue_flags
     ):
-        if prediction.margin < INF_RETRIEVAL_MARGIN_THR:
+        if prediction.margin < globals().get('EXPERIMENT_CLASS_MARGINS', {}).get(prediction.label, INF_RETRIEVAL_MARGIN_THR):
             continue
         score = (
             (1.0 - proposal_weight) * prediction.score
@@ -368,10 +369,14 @@ def predict_instances(img_rgb: np.ndarray,
 
     # 5) Per-class NMS
     final_instances = nms_masks_per_class(candidates, nms_iou)
+    clean_source_ids = {id(row) for row in final_instances} if capture_clean_sources else None
     if rescue_config is not None:
         from src.semantic_rescue import rescue_instances
         final_instances = rescue_instances(final_instances, extra_candidates, rescue_config,
                                            DATASET_CLASSES, rescue_stats)
+    if capture_clean_sources:
+        final_instances = [dict(row, geometric_completion_source=id(row) in clean_source_ids)
+                           for row in final_instances]
     
     # 6) Sort by score descending
     final_instances = sorted(final_instances, key=lambda x: x['score'], reverse=True)
