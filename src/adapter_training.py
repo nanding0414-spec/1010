@@ -28,7 +28,13 @@ def load_training_bank(root, train_list):
     if signature.get('aggregation'):
         from src.hard_center_gmp import describe
         if signature['aggregation'] != describe(signature['aggregation'].get('rho', .1)):
-            raise ValueError('Unsupported source aggregation signature')
+            from src.geometry_gmp import describe as geometry_description
+            if (signature.get('preprocessing_geometry',{}).get('mode') != 'letterbox'
+                    or signature['aggregation'] != geometry_description(signature['resolution'],
+                        signature['feature_grid'],signature['aggregation'].get('rho',.1))):
+                from src.tuning_features import validate_signature
+                if not validate_signature(signature):
+                    raise ValueError('Unsupported source aggregation signature')
     with (root / "meta" / "class_mapping.json").open(encoding="utf-8") as stream:
         mapping = json.load(stream)["id_to_dirname"]
     allowed_classes = set(mapping.values())

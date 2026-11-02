@@ -1,3 +1,13 @@
+# LSA + HC-GMP + PRR：共享编码版（2026-11-02）
+
+当前推荐执行入口：`tools/run_shared_mainline.py`；完整命令和验收边界见 [共享主线操作说明](docs/SHARED_MAINLINE.md)。算法配方 `lsa_hcgmp_prr_v1` 保持不变，执行配方为 `configs/recipes/lsa_hcgmp_prr_shared_v2.json`。同一原图的候选和区域特征共享冻结SAM3编码，PRR使用同一MLP和单库，仅补实时背景；不同预览/crop输入分别编码。新入口不保存整图特征缓存。
+
+已接受的参考VOC三seed mean mIoU为87.1019%、sampleSD 0.0773pp；共享与分开原图编码的1449图×3seed预测精确一致。此次公开入口整理不是一次新的从头GPU精度验收。COCO完整实验尚未结束，没有最终mIoU；当前训练评估的CPU全库检索瓶颈仍存在，不能宣称本次发布已解决。
+
+源码、配方、复现说明和完整项目手册随仓库发布；数据、权重、特征库、运行日志、密钥和未投稿论文草稿不放入仓库。下面保留上一版入口说明用于历史兼容，旧入口默认行为以其CLI为准。
+
+---
+
 # LSA + HC-GMP + PRR · SAM3弱监督语义分割
 
 当前主线：**冻结SAM3、两层轻量MLP、MLP后前景库过滤5%、balanced检索、面积100与渐进式补全**。

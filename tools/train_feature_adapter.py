@@ -39,6 +39,9 @@ def main():
     parser.add_argument("--feature-dropout", type=float, default=None)
     parser.add_argument("--consistency-weight", type=float, default=None)
     parser.add_argument("--label-smoothing", type=float, default=None)
+    parser.add_argument('--pseudo-loss', choices=['ce','gce'], default='ce')
+    parser.add_argument('--gce-q', type=float, default=.7)
+    parser.add_argument('--sample-weights', type=Path, help='JSON class/sample_id -> real confidence weight')
     parser.add_argument("--cosine-scale", type=float, default=16.0)
     parser.add_argument("--eval-class-topm", type=int, default=5)
     parser.add_argument("--eval-centroid-weight", type=float, default=0.4)
@@ -99,6 +102,18 @@ def main():
     torch.manual_seed(args.seed)
     rng = np.random.default_rng(args.seed)
     x, y, groups, classes, signature, records = load_training_bank(source, args.train_list)
+    sample_weights = None
+    if args.pseudo_loss == 'gce' and (not 0 < args.gce_q <= 1 or args.label_smoothing):
+        raise ValueError('GCE requires 0<q<=1 and zero label smoothing')
+    if args.sample_weights:
+        weights_map = json.loads(args.sample_weights.read_text())
+        keys = [str(path.parent.name)+'/'+str(sample) for path, _, ids in records for sample in ids]
+        if set(keys) != set(weights_map):
+            raise ValueError('Confidence weights must match every bank sample exactly')
+        sample_weights = np.array([weights_map[k] for k in keys], np.float32)
+        if not np.isfinite(sample_weights).all() or (sample_weights <= 0).any() or (sample_weights>1).any():
+            raise ValueError('Confidence weights must be in (0,1]')
+        args.sample_weights = str(args.sample_weights.resolve())
     if args.split_file:
         args.split_file = str(args.split_file.resolve())
     train, val = (split_from_report(groups, y, args.split_file) if args.split_file
@@ -145,7 +160,12 @@ def main():
             batch_x = torch.from_numpy(x[rows]).to(device)
             batch_y = torch.from_numpy(y[rows]).long().to(device)
             z = model(batch_x)
-            ce = F.cross_entropy(classifier(z), batch_y, label_smoothing=args.label_smoothing)
+            if args.pseudo_loss == 'ce' and sample_weights is None:
+                ce = F.cross_entropy(classifier(z), batch_y, label_smoothing=args.label_smoothing)
+            else:
+                from src.optimization import pseudo_classification_loss
+                ce = pseudo_classification_loss(classifier(z), batch_y, args.pseudo_loss, args.gce_q,
+                    sample_weights[rows] if sample_weights is not None else None, args.label_smoothing)
             contrastive = supervised_contrastive_loss(z, batch_y, args.temperature, bg_index)
             consistency = (feature_consistency_loss(model, batch_x, z, args.feature_dropout)
                            if args.consistency_weight > 0 else z.sum() * 0)

@@ -1,139 +1,39 @@
 {
-  "release": "LSA + HC-GMP + PRR mainline, 2026-10-29",
+  "release": "LSA + HC-GMP + PRR shared-encoding source release, 2026-11-02",
   "recipe_id": "lsa_hcgmp_prr_v1",
-  "base_commit": "634730200007670430d59976cb820bd161632e4d",
-  "modules": {
-    "LSA": "Lightweight Semantic Adaptation",
-    "HC-GMP": "Hard-Center Generalized Max Pooling",
-    "PRR": "Progressive Retrieval Recovery"
-  },
-  "record": {
-    "dataset": "VOC2012 val (development)",
-    "images": 1449,
-    "seeds": [
-      42,
-      123,
-      2026
-    ],
-    "per_seed_mIoU_percent": [
-      87.18510366582714,
-      87.08809049448544,
-      87.03237153523482
-    ],
-    "mean_mIoU_percent": 87.10185523184913,
-    "sampleSD_pp": 0.07729085925797713,
-    "source_version": "small_mask_hcr_20261027_200000",
-    "arm": "C_area100",
-    "manifest_sha256": "7311538b46f35c40ff79641f57e0eae8f8db4a29c0f91d3302049b92127ddff3",
-    "binding": "deac45aa31d178600e55c58c54d56db1fc288f7199fea11bb61ec52363a50200",
-    "independent_audit_job": "3822332",
-    "scope": "Accepted historical three-seed development result; publication integration is not a new GPU accuracy run or independent test."
-  },
+  "execution_id": "shared_encoding_v2",
+  "preferred_entry": "tools/run_shared_mainline.py",
+  "base_commit": "58b3464283b97e8e267e3e788fd4225edd21342f",
+  "semantic_recipe": "configs/recipes/lsa_hcgmp_prr_v1.json",
+  "execution_recipe": "configs/recipes/lsa_hcgmp_prr_shared_v2.json",
   "validation": {
-    "recipe_id": "lsa_hcgmp_prr_v1",
-    "scope": "Source integration and CPU consistency only; no new full GPU quality run",
-    "runtime_source_digest_sha256": "091d492b959c90dd61428c64e1b60961111a6a3c9668bfa7bfc44f0d3d6bc01a",
-    "local": {
-      "tests": 82,
-      "passed": 82,
-      "skipped": 0
-    },
-    "cluster_unit_tests": {
-      "job_id": "3838150",
-      "tests": 89,
-      "passed": 89,
-      "skipped": 0,
-      "receipt_sha256": "4d53c245e6fc67080881f2c6ee042b1756ffa94473d3b7a0316a90fc866fdca3",
-      "job_outcome": "FAILED after all unit tests, before conversion: test driver mistakenly used acceptance_002 instead of existing acceptance_001"
-    },
-    "cluster_conversion": {
-      "job_id": "3838928",
-      "slurm_state": "COMPLETED",
-      "exit_code": "0:0",
-      "receipt_sha256": "807e3b4352374321170e45e529b2eaa0c086af91077f013c474e3831b7f692b2",
-      "seeds": [
-        42,
-        123,
-        2026
-      ],
-      "projection_rows_per_seed": 1024,
-      "projection_atol": 1e-06,
-      "projection_rtol": 1e-06,
-      "maxabs_per_seed": [
-        1.043081283569336e-07,
-        1.043081283569336e-07,
-        1.1175870895385742e-07
-      ],
-      "retained_members_per_seed": 36231,
-      "retained_ids_exact_all3": true,
-      "saved_mask_score_pixel_replays": [
-        {
-          "seed": 42,
-          "image": "2007_000033",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        },
-        {
-          "seed": 42,
-          "image": "2007_000042",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        },
-        {
-          "seed": 123,
-          "image": "2007_000033",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        },
-        {
-          "seed": 123,
-          "image": "2007_000042",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        },
-        {
-          "seed": 2026,
-          "image": "2007_000033",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        },
-        {
-          "seed": 2026,
-          "image": "2007_000042",
-          "pixel_exact": true,
-          "changed_pixels": 0
-        }
-      ]
-    },
-    "attempt_history": [
+    "date": "2026-11-02",
+    "scope": "Source-release CPU/CLI validation; no fresh end-to-end GPU accuracy run",
+    "tests_run": 36,
+    "passed": 34,
+    "skipped": [
       {
-        "job": "3838035",
-        "outcome": "CANCELLED",
-        "reason": "Isolated publication snapshot omitted test-only dependencies; no model conversion started"
+        "test": "test_pool_strong_priority_raw_readonly_and_source (test_semantic_rescue.HCRTests.test_pool_strong_priority_raw_readonly_and_source)",
+        "reason": "OpenCV unavailable"
       },
       {
-        "job": "3838150",
-        "outcome": "FAILED",
-        "reason": "89/89 tests passed; subsequent driver source acceptance path typo; no source model read before failure"
+        "test": "test_predict_flags_survive_invalid_vectors_and_strong_only_nms (test_semantic_rescue.HCRTests.test_predict_flags_survive_invalid_vectors_and_strong_only_nms)",
+        "reason": "Torch/OpenCV unavailable"
       }
     ],
-    "GT_read": false,
-    "new_training": false,
-    "new_SAM3_or_GMP": false,
-    "new_full_quality_evaluation": false,
-    "resources": {
-      "cluster_cpus": 6,
-      "memory_GiB": 24,
-      "allocated_V100s": 1,
-      "CUDA_VISIBLE_DEVICES": ""
-    }
+    "failures": 0,
+    "errors": 0,
+    "CLI_help_passed": true,
+    "accepted_reference": {
+      "reference_binding": "732eb5ef6d842d6298e3096172d246b3bbd310dddc9ecdb04c134dd2720998f3",
+      "helper_sha256": "b63df8903ade8c267fdcccf7fe245f09c11a28077fe9d957190af2f537c8f4a8",
+      "new_helper_only_docstring_changed": true
+    },
+    "reference_acceptance_sha256": "29c9a6fe1cbdcc6526444127caf9d1a23d268fabfc792c45aa19b733c3b864b9",
+    "COCO_final_mIoU_available": false,
+    "running_cluster_snapshots_modified": false
   },
-  "historical_release": {
-    "commit": "634730200007670430d59976cb820bd161632e4d",
-    "manifest_path": "release_manifest.json",
-    "recipe_id": "r3_record_v1"
-  },
-  "scope": "Source and documents only; no data, models, caches, logs or credentials. Exact bytes via .gitattributes. This manifest excludes itself to avoid circular hashes.",
+  "scope": "Source and public documentation only. No data, weights, galleries, caches, credentials, run logs, or unpublished manuscript. Historical reference accuracy is not a fresh GPU test of the portable release. COCO incomplete. Manifest excludes itself.",
   "files": {
     ".env.example": {
       "bytes": 137,
@@ -144,20 +44,20 @@
       "sha256": "26cfb1514845537acde7b2dd0ee2a35f0dfd5a2d3f58249b17142b4be8c91328"
     },
     ".gitignore": {
-      "bytes": 264,
-      "sha256": "55ddd29812ca3ed412d1f29420062652480fd3c8ab23ccd59dfd76c29f5fde35"
+      "bytes": 292,
+      "sha256": "79234db31df72abd2e92e8a12aa886a966b7c597fafc5d0c371292ad22437649"
     },
     "AGENTS.md": {
-      "bytes": 1512,
-      "sha256": "dc9faaa6db0c78e32b3f5d22d9f713d29d782191d358c79136e93b86765f92f9"
+      "bytes": 1798,
+      "sha256": "360c4d349b9c9cd44ba6207724d34219b21ca8bbc71dd6d00b479ecb38cfe994"
     },
     "PROJECT_STORAGE_MANUAL.md": {
       "bytes": 203,
       "sha256": "50c8a25dbe4531caaa4b16e163963f3654d6a49bcd783f2ad2783562f0e7d9b5"
     },
     "README.md": {
-      "bytes": 5029,
-      "sha256": "ce5beaac679547025ab47534139a6a8048b565f0fb475128dd6c933fead97d1d"
+      "bytes": 6223,
+      "sha256": "cfb6ca215e9737065025942ad9d03a70cd7c9b02f4f146bb14094d759ef7e6cb"
     },
     "configs/cls_ade20k.txt": {
       "bytes": 1254,
@@ -191,6 +91,10 @@
       "bytes": 122,
       "sha256": "0ce2b3959a6c740d27d74cb70f2d3e64747c09efc674363302411dcbd2fc6f71"
     },
+    "configs/recipes/lsa_hcgmp_prr_shared_v2.json": {
+      "bytes": 3216,
+      "sha256": "6af73ff9c386d99fab4827949e7a3a07b3dea2a8a122d3fb2af89dc5966c8e69"
+    },
     "configs/recipes/lsa_hcgmp_prr_v1.json": {
       "bytes": 2278,
       "sha256": "21d3b8a02dbbed2eee408c31364118de31c811eb2c4783b7388235d9bbb05438"
@@ -204,8 +108,16 @@
       "sha256": "fa9788612efc24f3e523f9416fba6bb6c4aa25c87ed2208d6b0389d57f022cc7"
     },
     "docs/PROJECT_STORAGE_MANUAL.md": {
-      "bytes": 845209,
-      "sha256": "48923aeee566ed29b17613ce51817cbb6d22a70ca9ae610d49808721c66978c1"
+      "bytes": 897550,
+      "sha256": "c05acf2297c0b11b95f86215aed174b1b66f8bef2c8cf8b77e82e6c0766dbffc"
+    },
+    "docs/SHARED_MAINLINE.md": {
+      "bytes": 4685,
+      "sha256": "92718124b0e0424fd262a2e6dab3d19241ed367941e9b927f4199ed8f5451f62"
+    },
+    "docs/TCSVT_METHOD_WRITING.md": {
+      "bytes": 4453,
+      "sha256": "8f7e3b59b272f47d98a83e5c5d5e9add71ce5ac012958302e54da7be8fef8bfd"
     },
     "docs/lsa_hcgmp_prr_validation_20261029.json": {
       "bytes": 2723,
@@ -214,6 +126,10 @@
     "docs/mainline_validation.json": {
       "bytes": 1135,
       "sha256": "e92c73071c232105a702514bef7daacb5ff8fef355b8e445ee81a907e4bc9469"
+    },
+    "docs/shared_mainline_validation_20261102.json": {
+      "bytes": 1126,
+      "sha256": "f41b3387adca549e1c535edec8f1e32114e8b035545152e5662a1126093cbb50"
     },
     "project_utils/__init__.py": {
       "bytes": 25,
@@ -228,8 +144,8 @@
       "sha256": "da46ff9bbcb08bcc3123ba3facf8abab7c6f591550f00e68e53be45020af69d0"
     },
     "project_utils/experiment_notify.py": {
-      "bytes": 3794,
-      "sha256": "febe6a9519882153798092b1680488e64e309cf615299fe6d2a71fc153bce333"
+      "bytes": 4658,
+      "sha256": "fd66301da15ad12b827a5d78342bd98dd9b9c210a4c1ea4f0b6d95995d3e8b26"
     },
     "project_utils/mainline_selection.py": {
       "bytes": 1517,
@@ -1064,8 +980,8 @@
       "sha256": "cd7d774c35d87efeef1fbd395edcf6294d055061dadbb6499e6b51cf2e4bba05"
     },
     "src/adapter_training.py": {
-      "bytes": 7962,
-      "sha256": "b22fe62b106bf17e81917527b28ad67d21b0d118b433c3acf501918b34d2f629"
+      "bytes": 8440,
+      "sha256": "e3ec705483fa031332ebd885bd4eb55f0604a4051fbb05783e2fd8addc34217a"
     },
     "src/bank_input_validation.py": {
       "bytes": 2122,
@@ -1080,8 +996,8 @@
       "sha256": "f44752e0b3ea5d97cd87de3239a6cc5616b990a10809f1acacf949f1bd05ebe9"
     },
     "src/feature_adapter.py": {
-      "bytes": 7640,
-      "sha256": "1e44dcca67329f047ce2494075c5da7d8bb13df4d81a9b343a731df2111661e6"
+      "bytes": 8088,
+      "sha256": "84a4da4c7ca44c2de0f6dd225aba3509711c3c0c429866692dd5eebaf2ad1c4c"
     },
     "src/feature_bank_dataset.py": {
       "bytes": 1247,
@@ -1104,8 +1020,8 @@
       "sha256": "1adea8e6f73b9c2dbd6062185ce4caed6b7239de39ae0db30d89eda847a88723"
     },
     "src/feature_signature.py": {
-      "bytes": 2728,
-      "sha256": "dedbed620083486b8528912427c33058270d2e45c54d52dfca30040aa3ce8e96"
+      "bytes": 2772,
+      "sha256": "c0ea2f7b7e4b0d0e475735325d5d071a760241b7eb753a851c6ced9677b022af"
     },
     "src/filter_stage.py": {
       "bytes": 6270,
@@ -1114,6 +1030,10 @@
     "src/geometric_completion.py": {
       "bytes": 15897,
       "sha256": "b39356004019c50461bd655735bc763580dbfd84c6bd1c63dac8a649df969f34"
+    },
+    "src/geometry_gmp.py": {
+      "bytes": 5280,
+      "sha256": "c4b1b7928a6f1c6f2719484c6792f1180df842a2bd3cfe1cb61fba056f3d96d2"
     },
     "src/hard_center_gmp.py": {
       "bytes": 3850,
@@ -1132,12 +1052,16 @@
       "sha256": "da805235703f83d3fc3907a445ec53cf8fd155c3a761229ce168b73d6a9c58d5"
     },
     "src/mask_proposer_sam3.py": {
-      "bytes": 14538,
-      "sha256": "3e6f1545664ce1e50d03e1a5dbfee1b4522438e808638e2c7ed2430201f7dc5a"
+      "bytes": 15276,
+      "sha256": "a0a1e2d53fd50ba84144172d8bd5a5ab7ddfd4867662969e307bb8b215a204d7"
     },
     "src/mask_proposer_sam3_query.py": {
       "bytes": 5430,
       "sha256": "135e1ae4828e76979714f6662c378bcb10dc6bb51b002df08928b1d68a3c67cf"
+    },
+    "src/optimization.py": {
+      "bytes": 6703,
+      "sha256": "4b7dba91df66df0b94c04ac820c8cfb4fd93c4517fd395fb27015b955f12b20b"
     },
     "src/progressive_retrieval_recovery.py": {
       "bytes": 3013,
@@ -1146,6 +1070,10 @@
     "src/proposal_cleanup.py": {
       "bytes": 5716,
       "sha256": "95cc01ed83d8734fd3523075a71460dcdd916923f89e6161f987199002f6bea4"
+    },
+    "src/pseudo_instances.py": {
+      "bytes": 2572,
+      "sha256": "baa39f033554cad446064677b0d84df70f74b7652eb5c96740d22a19cec45e61"
     },
     "src/pseudo_label_cleanup.py": {
       "bytes": 3729,
@@ -1156,8 +1084,8 @@
       "sha256": "5c4b1c48e2bf11d1b7b0678bece3ce464dee9abcf5cea413ed362bd0fb686a35"
     },
     "src/retrieval.py": {
-      "bytes": 6195,
-      "sha256": "042e48ecf31f0622e6ea82780a1096c902411dbdf5df98acd710d313187491ff"
+      "bytes": 7973,
+      "sha256": "0c4275de77be9234496e20d6d97b3da171e13904c3cfc28ccc1598d8511b22ec"
     },
     "src/sam3_precision.py": {
       "bytes": 818,
@@ -1171,13 +1099,21 @@
       "bytes": 1769,
       "sha256": "506e72519f23d350f026b06b663907bb3ac0ba32e9cb3bfa8bf4d0062f4f3cdd"
     },
+    "src/sam3_shared_encoding.py": {
+      "bytes": 4263,
+      "sha256": "5c120139b2b68b07c0ad138a85ee2b3fb10c99a74cce230d547cc6502ef5e4a3"
+    },
     "src/semantic_bank_filter.py": {
       "bytes": 4111,
       "sha256": "7adb537397758f33be54b02ac1a2b6dc236d65d479b068d81051c4f90de90246"
     },
     "src/semantic_rescue.py": {
-      "bytes": 6936,
-      "sha256": "5de57852b6d8feb174d40b3db3e74e959b8c8b9ce8b95dae1b3b52e28bab2165"
+      "bytes": 8507,
+      "sha256": "cb42250473a1d48b547b414e2f09670bf310bb1d44e08e654b56e33268ee2aa2"
+    },
+    "src/tuning_features.py": {
+      "bytes": 9766,
+      "sha256": "e45b09155651ac668d40ddf7c126737711cee92831c9ab90d6a28a20f64a7e88"
     },
     "tests/__init__.py": {
       "bytes": 26,
@@ -1208,8 +1144,8 @@
       "sha256": "ac00a64b8cfd65d6dfc3d3c9e878b1a29f7f2a1183e9a439acf9287abe910ef7"
     },
     "tests/test_experiment_notify.py": {
-      "bytes": 2436,
-      "sha256": "113d81e667c912241af4ca7c50ea3a90d377b125cd3c957b74f4e77dfd964aca"
+      "bytes": 3094,
+      "sha256": "1c4734bf4c4d93785fab8033b24f92be2eef2a5c323d58fa7224d3abbb3786f7"
     },
     "tests/test_experimental_adaptive_rescue.py": {
       "bytes": 2829,
@@ -1447,6 +1383,10 @@
       "bytes": 5083,
       "sha256": "0e3d35516a51cbe68f4c5776721d020f4a2a860cd2540a7cc71017544429b61e"
     },
+    "tests/test_shared_mainline_release.py": {
+      "bytes": 2037,
+      "sha256": "0acaf77c56814d545d946c391a6223e06e0826d2dc82238d706e284f80ced5bc"
+    },
     "tests/test_small_mask_hcr.py": {
       "bytes": 6124,
       "sha256": "b60a37016c45e459dbdb35b31ef24157ec2ce7eee265846e5483abe96d7cc0bf"
@@ -1652,8 +1592,8 @@
       "sha256": "84cd50864b3ed2b8f51195b02a7b96565ccb8ba8ecb3b53ece18c3fb137ef751"
     },
     "tools/generate_pseudo_masks_sam3.py": {
-      "bytes": 37117,
-      "sha256": "c5f78ee46847e31d077f056c0e0afe22d5727d2b41cf2725fbdfefc1ac2b6ce0"
+      "bytes": 41291,
+      "sha256": "cd81c1be41830568a6d832def00395360c0e65ff3b53b52af280c1abbffa2d94"
     },
     "tools/generate_voc_imagelevel_train_val.py": {
       "bytes": 5482,
@@ -1755,6 +1695,10 @@
       "bytes": 8768,
       "sha256": "a9d51fa88888cdc899994064d85b6eb328d303eb9a552999a14e0833741e9192"
     },
+    "tools/run_shared_mainline.py": {
+      "bytes": 11631,
+      "sha256": "9e224ba00d1cf2c5b10a684ec6d5d2a8d8d4d2deec055e53e1d12c367fce13cd"
+    },
     "tools/run_span2016_full.py": {
       "bytes": 20449,
       "sha256": "45eabc95de97c417858aa098c482e896459f9ef86b8603bd7aca4f2a0042f62a"
@@ -1772,8 +1716,8 @@
       "sha256": "72cb2b6f35f08f8acd7b8d99d99e68d12282d60a800bf10778b76c660a2f7afb"
     },
     "tools/train_feature_adapter.py": {
-      "bytes": 12170,
-      "sha256": "a4da7b7d65dc4deff1a9cc6a442f200d8d1547b86173c90199712b3f0c21a891"
+      "bytes": 13616,
+      "sha256": "f1bbdec37250fc4cd96eaf9c848d26d9fc7b251fd7a9f984f3101074566d2ba8"
     },
     "tools/validate_semantic_rescue.py": {
       "bytes": 8997,

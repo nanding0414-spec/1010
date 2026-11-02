@@ -1,0 +1,101 @@
+{
+  "recipe_id": "lsa_hcgmp_prr_v1",
+  "method": "LSA + HC-GMP + PRR",
+  "modules": {
+    "LSA": "Lightweight Semantic Adaptation",
+    "HC-GMP": "Hard-Center Generalized Max Pooling",
+    "PRR": "Progressive Retrieval Recovery"
+  },
+  "training_labels": "original class-order ownership; presence=1; class-union probability0.4 edge repair and geometric cleanup",
+  "training": {
+    "backbone_frozen": true,
+    "adapter": [
+      1280,
+      512,
+      256
+    ],
+    "activation": "GELU",
+    "loss": "CE+0.5SupCon",
+    "epochs": 50,
+    "steps_per_epoch": 100,
+    "selection": "balanced_macro_first_strict_max",
+    "topk": 25,
+    "class_topm": 5,
+    "search_multiplier": 2,
+    "centroid_weight": 0.2
+  },
+  "aggregation": {
+    "name": "hard_center_gmp",
+    "rho": 0.1,
+    "precision": "fp32",
+    "resolution": 1008,
+    "training_region_min_area": 300
+  },
+  "bank": {
+    "prefilter_percent": 0,
+    "postfilter_percent": 5,
+    "background_drop_percent": 0,
+    "single_bank": true,
+    "ranking": "FP32 class mean Euclidean distance; numpy argsort descending; retained source order",
+    "gallery_order": "lexical class names including background; retained within-class source order"
+  },
+  "inference": {
+    "classified_min_mask_area": 100,
+    "nms_iou": 0.4,
+    "topk": 25,
+    "class_topm": 5,
+    "search_multiplier": 2,
+    "centroid_weight": 0.2,
+    "proposal_score_weight": 0.2,
+    "instance_score_threshold": 0.02
+  },
+  "prr": {
+    "stages": [
+      "HCR",
+      "Strict R3",
+      "Loose E"
+    ],
+    "crop_fraction": 0.8,
+    "candidate_semantics": "original-image tokens + same LSA and bank",
+    "proposal": 0.4,
+    "strict_score": 0.95,
+    "strict_margin": 0.1,
+    "loose_score": 0.9,
+    "loose_margin": 0.05,
+    "novel_fraction": 0.1,
+    "background_only": true
+  },
+  "record": {
+    "dataset": "VOC2012 val (development)",
+    "images": 1449,
+    "seeds": [
+      42,
+      123,
+      2026
+    ],
+    "per_seed_mIoU_percent": [
+      87.18510883833306,
+      87.08809566057322,
+      87.03237670231067
+    ],
+    "mean_mIoU_percent": 87.10186040040566,
+    "sampleSD_pp": 0.07729086227026899,
+    "source_version": "sam3_shared_encoding_full_recover_20261101_163000",
+    "arm": "C_shared",
+    "manifest_sha256": "eb3b0b578d32246d1eb445f4fa42acae3b337dd555dc5fd76c74ca83d2aceb4c",
+    "binding": "732eb5ef6d842d6298e3096172d246b3bbd310dddc9ecdb04c134dd2720998f3",
+    "independent_audit_job": "3873434",
+    "scope": "Accepted reference paired VOC development measurement; portable release integration is not a fresh end-to-end GPU accuracy run; COCO pending.",
+    "acceptance_sha256": "29c9a6fe1cbdcc6526444127caf9d1a23d268fabfc792c45aa19b733c3b864b9"
+  },
+  "execution_id": "shared_encoding_v2",
+  "preferred_entry": "tools/run_shared_mainline.py",
+  "full_image_feature_cache": false,
+  "execution": {
+    "original_image_encoder_shared": true,
+    "preview_separate": true,
+    "crop_separate": true,
+    "PRR_engine": "background-preserving ordered recovery",
+    "portable_entry_validation": "CPU/CLI checks; reference GPU regression separately accepted"
+  }
+}

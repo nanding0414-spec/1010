@@ -23,9 +23,11 @@ from PIL import Image
 
 
 class _Instances:
-    def __init__(self, pred_masks, scores):
+    def __init__(self, pred_masks, scores, **metadata):
         self.pred_masks = pred_masks  # [N, H, W]
         self.scores = scores          # [N]
+        for name, value in metadata.items():
+            setattr(self, name, value)
 
 
 class _Predictions:
@@ -286,6 +288,7 @@ class SAM3GridProposer:
         cand_scores = []
         cand_areas = []
         cand_boxes = []   # bbox (full-res)
+        cand_stability, cand_crops, cand_layers = [], [], []
 
         for crop_box, crop_layer in crop_boxes:
             x0, y0, x1, y1 = [int(v) for v in crop_box]
@@ -298,7 +301,7 @@ class SAM3GridProposer:
             )
             points = _make_point_grid(cw, ch, pps)
 
-            crop_masks, crop_scores = [], []
+            crop_masks, crop_scores, crop_stability = [], [], []
             for batch in _batched(points, self.points_per_batch):
                 point_coords = batch[:, None, :]          # (B,1,2) 像素坐标
                 point_labels = np.ones((len(batch), 1), dtype=np.int64)
@@ -343,6 +346,7 @@ class SAM3GridProposer:
                             continue
                         crop_masks.append(full_mask)
                         crop_scores.append(sc)
+                        crop_stability.append(stab)
 
             if self.box_nms_thresh < 1.0:
                 keep = _nms_by_masks(crop_masks, crop_scores, self.box_nms_thresh)
@@ -354,6 +358,9 @@ class SAM3GridProposer:
                 cand_scores.append(crop_scores[i])
                 cand_areas.append(int(crop_masks[i].sum()))
                 cand_boxes.append(_mask_bbox(crop_masks[i]))
+                cand_stability.append(crop_stability[i])
+                cand_crops.append(crop_box.tolist())
+                cand_layers.append(crop_layer)
 
         if not cand_masks:
             empty = torch.zeros((0,), device=self.device, dtype=torch.float32)
@@ -373,9 +380,13 @@ class SAM3GridProposer:
 
         out_masks = np.stack([cand_masks[i] for i in keep])
         out_scores = np.array([cand_scores[i] for i in keep])
+        binary_cpu = getattr(self, 'output_binary_cpu', False)
         return _Predictions(_Instances(
-            torch.from_numpy(out_masks.astype(np.float32)).to(self.device),
+            torch.from_numpy(out_masks) if binary_cpu else torch.from_numpy(out_masks.astype(np.float32)).to(self.device),
             torch.from_numpy(out_scores.astype(np.float32)).to(self.device),
+            stability_scores=np.asarray([cand_stability[i] for i in keep], np.float32),
+            crop_boxes=np.asarray([cand_crops[i] for i in keep], np.int32),
+            crop_layers=np.asarray([cand_layers[i] for i in keep], np.int16),
         ))
 
 

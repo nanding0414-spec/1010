@@ -17,14 +17,24 @@ class HCRConfig:
     retrieval_score: float = .95
     margin: float = .1
     novel_fraction: float = .1
+    min_area: int = 0
+    dedup_iou: float = 1.
+    extra_nms_iou: float = 1.
+    class_thresholds: dict | None = None
 
     def __post_init__(self):
         for name, value in asdict(self).items():
+            if name == 'class_thresholds':
+                if value is not None and any(not math.isfinite(v) or v<0 or v>1.000001 for v in value.values()):
+                    raise ValueError('Invalid class calibration thresholds')
+                continue
             if not math.isfinite(value):
                 raise ValueError(f'Nonfinite HCR parameter: {name}')
         if not (0 <= self.proposal_score <= 1 and -1 <= self.retrieval_score <= 1
                 and 0 <= self.margin <= 2 and 0 <= self.novel_fraction <= 1):
             raise ValueError('Invalid HCR thresholds')
+        if self.min_area < 0 or int(self.min_area) != self.min_area or not 0 <= self.dedup_iou <= 1 or not 0 <= self.extra_nms_iou <= 1:
+            raise ValueError('Invalid HCR geometry controls')
 
 
 def mask_hash(mask):
@@ -48,7 +58,7 @@ def validate_masks(masks, scores):
     return shape
 
 
-def prepare_pool(strong_masks, strong_scores, raw_masks, raw_scores, cleanup):
+def prepare_pool(strong_masks, strong_scores, raw_masks, raw_scores, cleanup, hcr=None):
     """Keep clean masks untouched; deduplicate relaxed raw candidates by geometry."""
     from src.proposal_cleanup import clean_proposals
     strong_shape = validate_masks(strong_masks, strong_scores)
@@ -59,11 +69,17 @@ def prepare_pool(strong_masks, strong_scores, raw_masks, raw_scores, cleanup):
     if not len(raw_array):
         raw_array = np.zeros((0, *(strong_shape or (1, 1))), dtype=bool)
     relaxed, scores, _, _ = clean_proposals(raw_array, raw_scores, replace(cleanup, min_score=0.))
-    masks = [np.asarray(m, dtype=bool) for m in strong_masks]
-    output_scores = list(map(float, strong_scores))
+    retained = [i for i,m in enumerate(strong_masks) if hcr is None or np.count_nonzero(m)>=hcr.min_area]
+    masks = [np.asarray(strong_masks[i], dtype=bool) for i in retained]
+    output_scores = [float(strong_scores[i]) for i in retained]
     flags = [False] * len(masks)
     seen = {mask_hash(m) for m in masks}
     for mask, score in zip(relaxed, scores):
+        if hcr is not None:
+            if mask.sum() < hcr.min_area:
+                continue
+            if hcr.dedup_iou < 1 and any(mask_iou(mask, other) >= hcr.dedup_iou for other in masks):
+                continue
         digest = mask_hash(mask)
         if digest in seen:
             continue
@@ -74,15 +90,20 @@ def prepare_pool(strong_masks, strong_scores, raw_masks, raw_scores, cleanup):
     return masks, output_scores, flags
 
 
+def mask_iou(a, b):
+    return float(np.count_nonzero(a & b)) / max(np.count_nonzero(a | b), 1)
+
+
 class RescueSource:
     """Read-only raw companion of a previously cleaned proposal cache."""
-    def __init__(self, clean_dir, image_ids, raw_dir=None):
+    def __init__(self, clean_dir, image_ids, raw_dir=None, hcr=None):
         from src.proposal_cleanup import CleanupConfig
         self.clean_dir = Path(clean_dir).resolve()
         metadata = self.clean_dir / 'cleanup_config.json'
         content = metadata.read_bytes()
         value = json.loads(content)
         self.cleanup = CleanupConfig(**value['config'])
+        self.hcr = hcr
         self.raw_dir = Path(raw_dir or value['input_dir']).resolve()
         if self.raw_dir == self.clean_dir:
             raise ValueError('HCR requires a distinct raw proposal source')
@@ -106,7 +127,7 @@ class RescueSource:
             raise ValueError(f'Invalid raw proposal arrays: {raw_path}')
         if raw.shape[1:] != (height, width) and not (len(raw) == 0 and raw.shape[1:] == (1, 1)):
             raise ValueError(f'Raw proposal/image dimensions differ: {raw_path}')
-        output = prepare_pool(masks, scores, raw, raw_scores, self.cleanup)
+        output = prepare_pool(masks, scores, raw, raw_scores, self.cleanup, self.hcr)
         digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
         identity = dict(image_id=image_id, clean_sha256=digest(self.clean_dir / f'{image_id}.npz'),
                         raw_sha256=digest(raw_path), strong_count=len(masks), extra_count=sum(output[2]))
@@ -132,16 +153,24 @@ def rescue_instances(strong, extras, config, foreground_classes, stats=None):
         if row['cls_name'] in foreground:
             occupied |= row['mask']
     result = list(strong)
+    accepted_masks = {}
     for row in sorted(extras, key=lambda r: -r['score']):
+        threshold = (config.class_thresholds.get(row['cls_name'], 1.000001)
+                     if config.class_thresholds is not None else config.retrieval_score)
         if (row['cls_name'] not in foreground or row['proposal_score'] < config.proposal_score
-                or row['retrieval_score'] < config.retrieval_score
-                or row['retrieval_margin'] < config.margin):
+                or row['retrieval_score'] < threshold
+                or row['retrieval_margin'] < config.margin
+                or row['mask'].sum() < config.min_area):
+            continue
+        if config.extra_nms_iou < 1 and any(mask_iou(row['mask'], other) >= config.extra_nms_iou
+                for other in accepted_masks.get(row['cls_name'], [])):
             continue
         stats['eligible'] += 1
         added = row['mask'] & ~occupied
         if not added.any() or added.sum() / max(int(row['mask'].sum()), 1) < config.novel_fraction:
             continue
         result.append(dict(row, mask=added))
+        accepted_masks.setdefault(row['cls_name'], []).append(row['mask'])
         occupied |= added
         stats['accepted'] += 1
         stats['added_pixels'] += int(added.sum())

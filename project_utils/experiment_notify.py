@@ -43,6 +43,8 @@ def notify_experiment(version, status, result_dir, seconds=None, *, summary=None
                     details += f'{key}：{summary[key]}\n'
             for name, value in summary.get('per_class_iou', {}).items():
                 details += f'{name} IoU：{100 * value:.4f}%\n'
+            for name, value in summary.get('variants', {}).items():
+                details += f"{name}：mIoU {100*value['mIoU']:.4f}%，相对基准 {100*value['delta_mIoU']:+.4f} 个百分点，best epoch {value.get('best_epoch')}\n"
         message.set_content(f'实验版本：{version}\n最终状态：{status}\n耗时：{elapsed}\n'
                             + details +
                             f'结果目录：{result_dir}\n请查看该目录的 status.json 和 summary.json。\n'
@@ -51,13 +53,26 @@ def notify_experiment(version, status, result_dir, seconds=None, *, summary=None
             path = Path(path)
             message.add_attachment(path.read_bytes(), maintype='application',
                                    subtype='octet-stream', filename=path.name)
-        with smtplib.SMTP_SSL('smtp.qq.com', 465, timeout=15,
-                              context=ssl.create_default_context()) as smtp:
-            smtp.login(sender, password)
-            refused = smtp.send_message(message)
-            if refused:
-                print('[Email] failed: recipient refused', flush=True)
-                return False
+        accepted = False
+        try:
+            with smtplib.SMTP_SSL('smtp.qq.com', 465, timeout=15,
+                                  context=ssl.create_default_context()) as smtp:
+                smtp.ehlo_or_helo_if_needed()
+                mechanisms = str(smtp.esmtp_features.get('auth', '')).upper().split()
+                if 'LOGIN' in mechanisms:
+                    smtp.user, smtp.password = sender, password
+                    smtp.auth('LOGIN', smtp.auth_login, initial_response_ok=False)
+                else:
+                    smtp.login(sender, password)
+                refused = smtp.send_message(message)
+                if refused:
+                    print('[Email] failed: recipient refused', flush=True)
+                    return False
+                accepted = True
+        except smtplib.SMTPException:
+            if not accepted:
+                raise
+            # A disconnect during QUIT cannot undo the accepted DATA command.
         print('[Email] accepted by SMTP server', flush=True)
         return True
     except Exception:

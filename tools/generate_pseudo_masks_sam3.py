@@ -58,8 +58,13 @@ class SAM3PseudoMaskGenerator:
         edge_repair=False, mask_logit_threshold=0.4, close_kernel=3,
         close_iterations=1, dilate_pixels=1, diningtable_close_iterations=2,
         force_presence_one=False,
+        overlap_policy='class_order', save_instances=False,
     ):
         self.dataset_type = dataset_type.lower()
+        if overlap_policy not in ('class_order','score'):
+            raise ValueError('Unknown overlap policy')
+        self.overlap_policy = overlap_policy
+        self.save_instances = bool(save_instances)
         self.prompt_backend = prompt_backend
         if prompt_backend != 'active':
             raise ValueError('Only the active prompt backend is supported')
@@ -260,6 +265,18 @@ class SAM3PseudoMaskGenerator:
                     class_indices=[i for i, _ in mapped_labels])['instances']
             masks = instances.pred_masks.cpu().numpy().astype(bool)
             class_ids = self.active_proposer.last_result['class_ids']
+            if getattr(self,'save_instances',False) or getattr(self,'overlap_policy','class_order') == 'score':
+                from src.pseudo_instances import compose_instances
+                scores = instances.scores.detach().cpu().numpy()
+                seg, assigned, repaired = compose_instances(masks,class_ids,scores,
+                    self.edge_options if self.edge_repair else None,self.classes,self.overlap_policy)
+                self.last_instances = dict(masks=masks, repaired_masks=repaired,
+                    assigned_masks=assigned,class_ids=np.asarray(class_ids,np.int16),scores=scores.astype(np.float32))
+                self.last_prompt_report = self.active_proposer.last_result['report']
+                self.last_prompt_report['instance_rasterization'] = dict(overlap_policy=self.overlap_policy,
+                    edge_policy='per_instance_before_rasterization',confidence_source='SAM3_instance_score',
+                    count=len(masks))
+                return seg
             # Keep the existing pseudo-label overlap rule: first allowed class wins.
             # No competing-class score comparison and no background calibration.
             edge_statistics = []
@@ -372,6 +389,11 @@ class SAM3PseudoMaskGenerator:
                                                   input='upsampled_pred_masks_logits_sigmoid')
         if getattr(self, 'force_presence_one', False):
             generation_config['force_presence_one'] = True
+        if self.save_instances or self.overlap_policy != 'class_order':
+            generation_config.update(save_instances=self.save_instances,overlap_policy=self.overlap_policy,
+                                     edge_channel_policy='per_instance_preserve_boundaries')
+            if 'edge_repair' in generation_config:
+                generation_config['edge_repair']['channel_policy']='per_instance_before_score_composite'
         if getattr(self, 'image_dir', None) is not None:
             generation_config['image_dir'] = str(self.image_dir.resolve())
         if getattr(self, 'output_size_reference_dir', None) is not None:
@@ -427,6 +449,14 @@ class SAM3PseudoMaskGenerator:
                     if completed.get(key) != fingerprint or hashes.get(key) != hashlib.sha256(out_path.read_bytes()).hexdigest():
                         raise RuntimeError(f'Unverified/changed PNG retained: {out_path}; use a new version')
                 if resume and out_path.is_file() and completed.get(str(img_path.resolve())) == fingerprint:
+                    if self.save_instances:
+                        saved = self.output_dir/'instances'/(img_path.stem+'.npz')
+                        receipt = json.loads(saved.with_suffix('.json').read_text())
+                        if (receipt['sha256'] != hashlib.sha256(saved.read_bytes()).hexdigest()
+                                or receipt['semantic_sha256'] != hashlib.sha256(out_path.read_bytes()).hexdigest()
+                                or receipt['image_sha256'] != hashlib.sha256(img_path.read_bytes()).hexdigest()
+                                or receipt['generation_fingerprint'] != fingerprint):
+                            raise ValueError('Saved instance receipt differs; choose a new experiment')
                     success += 1
                     skipped += 1
                     continue
@@ -440,6 +470,23 @@ class SAM3PseudoMaskGenerator:
                 temporary = out_path.with_suffix('.tmp.png')
                 Image.fromarray(seg.astype(np.uint8)).save(temporary)
                 temporary.replace(out_path)
+                if self.save_instances:
+                    saved = self.output_dir/'instances'/(img_path.stem+'.npz')
+                    saved.parent.mkdir(parents=True,exist_ok=True)
+                    arrays = dict(self.last_instances)
+                    if target_size is not None:
+                        for name in ['masks','repaired_masks','assigned_masks']:
+                            arrays[name] = np.asarray([np.asarray(Image.fromarray(m.astype(np.uint8)).resize(
+                                target_size,Image.Resampling.NEAREST),bool) for m in arrays[name]],bool).reshape(
+                                    -1,target_size[1],target_size[0])
+                    temporary = saved.with_suffix('.tmp.npz')
+                    np.savez_compressed(temporary,**arrays);temporary.replace(saved)
+                    receipt = dict(sha256=hashlib.sha256(saved.read_bytes()).hexdigest(),
+                        semantic_sha256=hashlib.sha256(out_path.read_bytes()).hexdigest(),
+                        image_sha256=hashlib.sha256(img_path.read_bytes()).hexdigest(),source_image=str(img_path.resolve()),
+                        generation_fingerprint=fingerprint,confidence_source='SAM3_instance_score')
+                    temporary = saved.with_suffix('.tmp.json')
+                    temporary.write_text(json.dumps(receipt,indent=2));temporary.replace(saved.with_suffix('.json'))
                 if self.prompt_backend == 'active':
                     report_path = meta_dir / "prompt_choices" / split / f"{img_path.stem}.json"
                     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -517,6 +564,8 @@ def parse_args(argv=None):
     parser.add_argument('--nms-threshold', type=float, default=0.7)
     parser.add_argument('--max-mask-area-ratio', type=float, default=0.0)
     parser.add_argument('--edge-repair', action=argparse.BooleanOptionalAction)
+    parser.add_argument('--overlap-policy',choices=['class_order','score'],default='class_order')
+    parser.add_argument('--save-instances',action='store_true',help='Save original/repaired/assigned masks and true SAM scores')
     parser.add_argument('--mask-logit-threshold', type=float, default=.4,
                         help='Probability threshold after sigmoid, not a raw-logit cutoff')
     parser.add_argument('--close-kernel', type=int, default=3)
@@ -605,6 +654,7 @@ def main(argv=None):
         edge_repair=args.edge_repair, mask_logit_threshold=args.mask_logit_threshold,
         close_kernel=args.close_kernel, close_iterations=args.close_iterations, dilate_pixels=args.dilate_pixels,
         diningtable_close_iterations=args.diningtable_close_iterations, force_presence_one=args.force_presence_one,
+        overlap_policy=args.overlap_policy,save_instances=args.save_instances,
         imagelevel_json=args.imagelevel_json, preflight_split=args.split,
         image_dir=args.image_dir, output_size_reference_dir=args.output_size_reference_dir,
     )

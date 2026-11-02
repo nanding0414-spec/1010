@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-02",
+  "scope": "Source-release CPU/CLI validation; no fresh end-to-end GPU accuracy run",
+  "tests_run": 36,
+  "passed": 34,
+  "skipped": [
+    {
+      "test": "test_pool_strong_priority_raw_readonly_and_source (test_semantic_rescue.HCRTests.test_pool_strong_priority_raw_readonly_and_source)",
+      "reason": "OpenCV unavailable"
+    },
+    {
+      "test": "test_predict_flags_survive_invalid_vectors_and_strong_only_nms (test_semantic_rescue.HCRTests.test_predict_flags_survive_invalid_vectors_and_strong_only_nms)",
+      "reason": "Torch/OpenCV unavailable"
+    }
+  ],
+  "failures": 0,
+  "errors": 0,
+  "CLI_help_passed": true,
+  "accepted_reference": {
+    "reference_binding": "732eb5ef6d842d6298e3096172d246b3bbd310dddc9ecdb04c134dd2720998f3",
+    "helper_sha256": "b63df8903ade8c267fdcccf7fe245f09c11a28077fe9d957190af2f537c8f4a8",
+    "new_helper_only_docstring_changed": true
+  },
+  "reference_acceptance_sha256": "29c9a6fe1cbdcc6526444127caf9d1a23d268fabfc792c45aa19b733c3b864b9",
+  "COCO_final_mIoU_available": false,
+  "running_cluster_snapshots_modified": false
+}

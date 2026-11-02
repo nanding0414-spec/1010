@@ -61,7 +61,7 @@ def validate_feature_signature(
         )
 
     mismatches = []
-    for key in sorted(REQUIRED_SIGNATURE_KEYS | {"adapter", "pooling", "aggregation", "resolution_adaptation", "precision_policy", "checkpoint_sha256", "experimental_pooling"}):
+    for key in sorted(REQUIRED_SIGNATURE_KEYS | {"adapter", "pooling", "aggregation", "resolution_adaptation", "precision_policy", "checkpoint_sha256", "experimental_pooling", "preprocessing_geometry", "scale_encoders"}):
         if actual.get(key) != expected.get(key):
             mismatches.append(
                 f"{key}: bank={actual.get(key)!r}, inference={expected.get(key)!r}"

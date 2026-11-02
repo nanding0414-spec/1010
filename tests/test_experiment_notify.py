@@ -7,6 +7,15 @@ from project_utils.experiment_notify import notify_experiment
 
 
 class NotificationTests(unittest.TestCase):
+    def test_login_and_accepted_data_survive_quit_disconnect(self):
+        import smtplib
+        with patch.dict(os.environ,{'MODUSEG_SMTP_PASSWORD':'test-secret'},clear=True), patch('smtplib.SMTP_SSL') as smtp:
+            client=smtp.return_value.__enter__.return_value
+            client.esmtp_features={'auth':'LOGIN PLAIN'};client.send_message.return_value={}
+            smtp.return_value.__exit__.side_effect=smtplib.SMTPServerDisconnected('closed during QUIT')
+            self.assertTrue(notify_experiment('test','complete','experiments/test'))
+            client.auth.assert_called_once_with('LOGIN',client.auth_login,initial_response_ok=False)
+
     def test_results_summary_and_attachments(self):
         with tempfile.TemporaryDirectory() as directory:
             paths=[Path(directory)/name for name in ('summary.json','metrics.json','per_class.csv')]

@@ -88,7 +88,13 @@ def load_adapter(path, device="cpu", source_signature=None):
     if aggregation:
         from src.hard_center_gmp import describe
         if aggregation != describe(aggregation.get('rho', .1)):
-            raise ValueError('Unsupported adapter aggregation signature')
+            from src.geometry_gmp import describe as geometry_description
+            if (expected.get('preprocessing_geometry',{}).get('mode') != 'letterbox'
+                    or aggregation != geometry_description(expected['resolution'],
+                        expected['feature_grid'],aggregation.get('rho',.1))):
+                from src.tuning_features import validate_signature
+                if not validate_signature(expected):
+                    raise ValueError('Unsupported adapter aggregation signature')
     if expected.get('pooling'):
         raise ValueError('Unsupported legacy pooling signature')
     if expected.get("backbone") != "sam3" or expected.get("adapter"):
